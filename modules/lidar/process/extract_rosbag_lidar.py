@@ -84,6 +84,8 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     # should only keep point nearest to observer for duplicate x,y values
     for x, y, p, l in zip(x_img_int, y_img_int, pixel_values, l2_norm):
+        y = min(y, int(y_max))
+        y = max(y, 0)
         if norm[y, x] > l:
             img[y, x] = p
             norm[y, x] = l
