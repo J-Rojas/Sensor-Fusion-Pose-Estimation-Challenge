@@ -1,27 +1,39 @@
 import sys
+sys.path.append('../')
 import pyglet
 import argparse
 import numpy as np
 import rosbag
 import os
 import matplotlib.image as mpimg
+import sensor_msgs.point_cloud2
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 from extract_rosbag_lidar import save_lidar_2d_images
+from common.birds_eye_view_generator import generate_birds_eye_view
 
 class ROSBagExtractor:
 
-    def __init__(self, window_max_width=875, cmap=None, output_dir=None):
+    def __init__(self,
+                 window_max_width=875,
+                 topdown_res=.2,
+                 cmap=None,
+                 output_dir=None,
+                 quiet=False):
         self.windows = {}
         self.bridge = CvBridge()
         self.window_max_width = window_max_width
         self.cmap = cmap
         self.output_dir = output_dir
+        self.topdown_res = (topdown_res, topdown_res)
+        self.quiet=quiet
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
                 os.makedirs(self.output_dir + '/lidar_360/')
+            if not (os.path.isdir(self.output_dir + '/topdown/')):
+                os.makedirs(self.output_dir + '/topdown/')
             if not (os.path.isdir(self.output_dir + '/camera/')):
                 os.makedirs(self.output_dir + '/camera/')
 
@@ -86,7 +98,8 @@ class ROSBagExtractor:
 
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
-            window.append(self.get_window(topic, cv_img))
+            if not self.quiet:
+                window.append(self.get_window(topic, cv_img))
             img.append(self.convert_img(cv_img))
 
             name = 'image'
@@ -102,28 +115,46 @@ class ROSBagExtractor:
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
+            points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
+            points = np.array(list(points))
+
             # render top down point cloud
-            lidar_images = generate_lidar_2d_front_view(msg, cmap=self.cmap)
+            density_top_down = generate_birds_eye_view(points, timestamp, res=(.4,.4))
+            density_top_down = density_top_down.astype(np.uint8)
+            density_top_down = np.dstack((density_top_down, density_top_down, density_top_down))
+
+            # render 360 view
+            lidar_images = generate_lidar_2d_front_view(points, cmap=self.cmap)
+
             img.extend(
-                map(self.convert_img, [lidar_images['intensity'], lidar_images['distance'], lidar_images['height']])
+                map(self.convert_img, [
+                    lidar_images['intensity'],
+                    lidar_images['distance'],
+                    lidar_images['height'],
+                    density_top_down
+                ])
             )
 
             # save files
             if self.output_dir is not None:
                 save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp, lidar_images)
+                save_lidar_2d_images(self.output_dir + '/topdown/', timestamp, {'density': density_top_down})
 
-            window.extend([
-                self.get_window(topic + '/intensity', lidar_images['intensity']),
-                self.get_window(topic + '/distance', lidar_images['distance']),
-                self.get_window(topic + '/height', lidar_images['height']),
-            ])
+            if not self.quiet:
+                window.extend([
+                    self.get_window(topic + '/360/intensity', lidar_images['intensity']),
+                    self.get_window(topic + '/360/distance', lidar_images['distance']),
+                    self.get_window(topic + '/360/height', lidar_images['height']),
+                    self.get_window(topic + '/topdown/density', density_top_down),
+                ])
 
-        for w, i in zip(window, img):
-            w.switch_to()
-            w.dispatch_events()
-            size = w.get_size()
-            i.blit(0, 0, width=size[0], height=size[1])
-            w.flip()
+        if not self.quiet:
+            for w, i in zip(window, img):
+                w.switch_to()
+                w.dispatch_events()
+                size = w.get_size()
+                i.blit(0, 0, width=size[0], height=size[1])
+                w.flip()
 
 
 def main():
@@ -133,8 +164,12 @@ def main():
     parser.add_argument('bag_file', type=str, help='ROS Bag name')
     parser.add_argument('--skip', type=int, default="0", help='skip seconds')
     parser.add_argument('--topics', type=str, default=None, help='Topic list to display')
+    parser.add_argument('--topdown_res', type=str, default=.2, help='Topdown image resolution')
     parser.add_argument('--lidar_cmap', type=str, default='jet', help='Colormap for lidar images (Default "jet")')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
+    parser.add_argument('--quiet', dest='quiet', action='store_true')
+    parser.set_defaults(quiet=True)
+
     args = parser.parse_args()
 
     bag_file = args.bag_file
@@ -152,7 +187,10 @@ def main():
     startsec = 0
     topics_list = args.topics.split(',') if args.topics else None
 
-    extractor = ROSBagExtractor(cmap=args.lidar_cmap, output_dir=output_dir)
+    extractor = ROSBagExtractor(cmap=args.lidar_cmap,
+                                output_dir=output_dir,
+                                topdown_res=args.topdown_res,
+                                quiet=args.quiet)
 
     print("reading rosbag ", bag_file)
     bag = rosbag.Bag(bag_file, 'r')
@@ -170,7 +208,8 @@ def main():
                 print("skipping to ", skip, " from ", startsec, " ...")
         else:
             if t.to_sec() > skipping:
-                extractor.print_msg(msgType, topic, msg, t, startsec)
+                if not args.quiet:
+                    extractor.print_msg(msgType, topic, msg, t, startsec)
                 extractor.handle_msg(msgType, topic, msg, t)
 
 
