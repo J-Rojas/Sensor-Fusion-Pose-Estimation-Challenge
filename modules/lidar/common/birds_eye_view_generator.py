@@ -1,15 +1,11 @@
 import argparse
-import sys
 import numpy as np
-import pygame
 import rosbag
-import datetime
 import sensor_msgs.point_cloud2
 import matplotlib as mpl
 mpl.use('Agg')  #Skip using X11
 import matplotlib.pyplot as plt
 from itertools import repeat
-import cv2
 
 
 startsec = 0
