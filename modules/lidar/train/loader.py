@@ -1,87 +1,145 @@
 import numpy as np
 import glob
+import argparse
+import csv
+import sys
+import random
+
+from collections import defaultdict
+from PIL import Image as pil_image
 
 BATCH_SIZE = 32
+IMG_WIDTH = 1029
+IMG_HEIGHT = 93
+NUM_CHANNELS = 4
 
-def parse_timestamp_from_file_name(filename):
-    # TODO: get timestamp from file name
-    timestamp = ?
-    return timestamp
+def usage():
+    print('Loads training data with ground truths and generate training batches')
+    print('Usage: python loader.py --input_csv_file [csv file of data folders] --output_dir [output directory]')
 
-def load_tracklet_data_from_sources(list_source_dirs):
+    
+#
+# read in images/ground truths batch by batch 
+#
+def data_generator(tx, ty, tz, img_dir_and_prefix):
 
-    ret_val = {}
+	image_distace = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+	image_height = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)	
+	image_intensity = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)		
+	obj_location = np.ndarray(shape=(BATCH_SIZE,3), dtype=float)
+	
+	batch_index = 0
+	size = len(tx)
+	num_batches = size/BATCH_SIZE
+	size = num_batches*BATCH_SIZE
+	
 
-    for d in list_source_dirs:
-        # TODO: load the tracklet data files from each folder
-        tracklet_data = ?
-        ret_val[d] = tracklet_data
-
-    return ret_val
-
-def find_lidar_candidate_data_frames(lidar_files, list_tracklet_data, files):
-
-    for data in list_tracklet_data:
-        timestamp = data['timestamp']
-        # TODO: determine the best matching lidar data frame file(s) for each timestamp
-        # use the parse_timestamp_from_file_name function
-        file = ...
-        # append lidar candidate file to list
-        files.append({'file': file, 'tracklet': data})
-
-    return files
-
-
-def aggregate_lidar_data_sources(list_source_dirs, tracklet_data_dict):
-
-    files = []
-
-    for d in list_source_dirs:
-        lidar_files = glob.glob("{}/*.png".format(d))
-        find_lidar_candidate_data_frames(lidar_files, tracklet_data_dict[d], files)
-
-    return files
-
-def aggregate_data(csv_sources):
-
-    # determine list of data sources to load
-    list_source_dirs = loadCSV(csv_sources)
-
-    tracklet_data_dict = load_tracklet_data_from_sources(list_source_dirs)
-
-    return aggregate_lidar_data_sources(list_source_dirs, tracklet_data_dict)
-
-def generate_tensors(lidar_data_sources):
-
-    # TODO: shuffle the data
-    X = []
-    y = []
-
-    for data in lidar_data_sources:
-        # TODO: Generate X tensor
-        lidar_file = data['file']
-        x_vec = ...
+	while 1:
+		      
+		for ind in range(size):
+		
+		    fname = img_dir_and_prefix[ind]+"_distance.png"
+		    img = pil_image.open(fname)
+		    img_arr = np.asarray(img, dtype='float32')
+		    np.copyto(image_distace[batch_index],img_arr)
+			
+		    fname = img_dir_and_prefix[ind]+"_height.png"
+		    img = pil_image.open(fname)
+		    img_arr = np.asarray(img, dtype='float32')
+		    np.copyto(image_height[batch_index],img_arr)
+			
+		    fname = img_dir_and_prefix[ind]+"_intensity.png"
+		    img = pil_image.open(fname)
+		    img_arr = np.asarray(img, dtype='float32')
+		    np.copyto(image_intensity[batch_index],img_arr)
+		    
+		    obj_location[batch_index][0] = tx[ind]
+		    obj_location[batch_index][1] = ty[ind]
+		    obj_location[batch_index][2] = tz[ind]
+		    
+		    batch_index = batch_index + 1
+		    
+		    if (batch_index >= BATCH_SIZE):
+		        batch_index = 0
+		        yield (image_distace, image_height, image_intensity, obj_location)
 
 
-        # TODO: Generate y tensor
-        tracklet = data['tracklet']
-        y_vec = ...
+        ziplist = list(zip(tx, ty, tz, img_dir_and_prefix))
+        random.shuffle(ziplist)
+        tx, ty, tz, img_dir_and_prefix = zip(*c)
 
-        X.append(x_vec)
-        y.append(y_vec)
 
-        if len(X) == BATCH_SIZE:
-            yield (np.array(X), np.array(y))
-            X = []
-            y = []
+#
+# read input csv file to get the list of directories
+#
+def get_data_and_ground_truth(csv_sources):
+    
+    txl = []
+    tyl = []
+    tzl = []
+    img_dir_and_prefix = []
 
-    yield (np.array(X), np.array(y))
+    with open(csv_sources) as csvfile:
+        readCSV = csv.reader(csvfile, delimiter=',')
+     
+        for row in readCSV:
+            dir = row[0]
+            interp_lidar_fname = dir+"/lidar_interpolated.csv"
+            
+            with open(interp_lidar_fname) as csvfile_2:
+                readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
+                
+                for row2 in readCSV_2:
+                    ts = row2['timestamp']
+                    tx = row2['tx']
+                    ty = row2['ty']
+                    tz = row2['tz']
+                    
+                    image_dir_prefix = dir+"/lidar_360/"+ts
+                    img_dir_and_prefix.append(image_dir_prefix)
+                    txl.append(tx)
+                    tyl.append(ty)
+                    tzl.append(tz)
+                    
+                    
+    return txl,tyl,tzl,img_dir_and_prefix
 
-def main():
 
-    # TODO: do tests
-    pass
 
 # ***** main loop *****
 if __name__ == "__main__":
-    main()
+
+    if len(sys.argv) < 3:
+        usage()
+        sys.exit()
+ 
+    parser = argparse.ArgumentParser(description="Load training data and ground truths")
+    parser.add_argument("--input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
+    parser.add_argument("--output_dir", type=str, default="../output", help="Output directory")
+
+    args = parser.parse_args()
+    input_csv_file = args.input_csv_file
+    output_dir = args.output_dir 
+    
+    try:
+        f = open(input_csv_file)
+        f.close()
+    except:
+        print('Unable to read file: %s' % input_csv_file)
+        f.close()
+        sys.exit()
+
+    # determine list of data sources and ground truths to load
+    tx,ty,tz,img_dir_and_prefix = get_data_and_ground_truth(input_csv_file)
+   
+    # generate data in batches
+    generator = data_generator(tx, ty, tz, img_dir_and_prefix)
+    image_distace, image_height, image_intensity, obj_location = next(generator)
+    print(obj_location)
+    
+    
+    
+    
+    
+    
+    
