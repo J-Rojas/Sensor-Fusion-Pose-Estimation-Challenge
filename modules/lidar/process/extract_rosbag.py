@@ -168,7 +168,7 @@ def main():
     parser.add_argument('--lidar_cmap', type=str, default='jet', help='Colormap for lidar images (Default "jet")')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true')
-    parser.set_defaults(quiet=True)
+    parser.set_defaults(quiet=False)
 
     args = parser.parse_args()
 
