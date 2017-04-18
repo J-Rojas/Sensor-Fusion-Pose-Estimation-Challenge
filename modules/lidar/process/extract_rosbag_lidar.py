@@ -12,6 +12,7 @@ import sensor_msgs.point_cloud2
 import matplotlib.cm
 import matplotlib.colors
 import matplotlib.image as mpimg
+import pickle
 
 LIDAR_MAX_HEIGHT = 5
 LIDAR_MIN_HEIGHT = -2
@@ -132,15 +133,52 @@ def main():
     print("Extract velodyne_points from {} into {}".format(args.bag_file, args.output_dir))
     
     bag = rosbag.Bag(bag_file, "r")
-
+    result = {'intensity': {}, 'distance': {}, 'height': {}}
     for topic, msg, t in bag.read_messages(topics=['/velodyne_points']):
         points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
         points = np.array(list(points))
         images = generate_lidar_2d_front_view(points, cmap=args.cmap)
-        save_lidar_2d_images(output_dir, t, images)
-
+        result['intensity'][str(t)] = images['intensity']
+        result['distance'][str(t)] = images['distance']
+        result['height'][str(t)] = images['height']
+        #save_lidar_2d_images(output_dir, t, images)
+        break
     bag.close()
-
+    f = open(output_dir + '/lidar.p', 'wb')
+    pickle.dump(result, f)
+    f.close()
+    
+    
+    
+    #Load pickle: 
+    #input  
+    '''
+    f = open(output_dir + '/lidar.p', 'rb')
+    pickle_data = pickle.load(f)
+    print(pickle_data)
+    for mapType, pointMap in pickle_data.items():
+        print(mapType)
+        for t, value in pointMap.items():
+            print(t)
+            print(np.shape(value))
+    '''
+    
+    #output
+    '''
+    distance
+    1490149174663355139
+    (93, 1029)
+    ...
+    intensity
+    1490149174663355139
+    (93, 1029)
+    ...
+    height
+    1490149174663355139
+    (93, 1029)
+    ...
+    
+    '''
     return
 
 if __name__ == '__main__':
