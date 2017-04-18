@@ -185,6 +185,8 @@ def main():
 
     skip = args.skip
     startsec = 0
+    last_topic_time = {}
+    maximum_gap_topic = {}
     topics_list = args.topics.split(',') if args.topics else None
 
     extractor = ROSBagExtractor(cmap=args.lidar_cmap,
@@ -208,10 +210,22 @@ def main():
                 print("skipping to ", skip, " from ", startsec, " ...")
         else:
             if t.to_sec() > skipping:
+
+                if last_topic_time.get(topic) != None:
+                    gap = t.to_sec() - last_topic_time[topic]
+                    if maximum_gap_topic.get(topic) == None or gap > maximum_gap_topic[topic]:
+                        maximum_gap_topic[topic] = gap
+
+                last_topic_time[topic] = t.to_sec()
+
                 if not args.quiet:
                     extractor.print_msg(msgType, topic, msg, t, startsec)
-                extractor.handle_msg(msgType, topic, msg, t)
+                if not args.quiet and not output_dir:
+                    extractor.handle_msg(msgType, topic, msg, t)
 
+    print("Max interval between messages per topic")
+    for key, value in sorted(maximum_gap_topic.iteritems(), key=lambda (k,v): (v,k)):
+        print("    {}: {}".format(key, value))
 
 # ***** main loop *****
 if __name__ == "__main__":
