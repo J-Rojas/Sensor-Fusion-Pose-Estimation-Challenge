@@ -232,7 +232,35 @@ def main():
     f = open(output_dir + '/lidar.p', 'wb')
     pickle.dump(result, f)
     f.close()
+    #Load pickle: 
+    #input  
+    '''
+    f = open(output_dir + '/lidar.p', 'rb')
+    pickle_data = pickle.load(f)
+    print(pickle_data)
+    for mapType, pointMap in pickle_data.items():
+        print(mapType)
+        for t, value in pointMap.items():
+            print(t)
+            print(np.shape(value))
+    '''
     
+    #output
+    '''
+    distance
+    1490149174663355139
+    (93, 1029)
+    ...
+    intensity
+    1490149174663355139
+    (93, 1029)
+    ...
+    height
+    1490149174663355139
+    (93, 1029)
+    ...
+    
+    '''
     print("Max interval between messages per topic")
     for key, value in sorted(maximum_gap_topic.iteritems(), key=lambda (k,v): (v,k)):
         print("    {}: {}".format(key, value))
