@@ -7,6 +7,7 @@ import rosbag
 import os
 import matplotlib.image as mpimg
 import sensor_msgs.point_cloud2
+import pickle
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
@@ -89,7 +90,7 @@ class ROSBagExtractor:
     def convert_img(img):
         return pyglet.image.ImageData(img.shape[1], img.shape[0], 'RGB', np.flipud(img).tobytes())
 
-    def handle_msg(self, msg_type, topic, msg, timestamp):
+    def handle_msg(self, msg_type, topic, msg, timestamp, result):
 
         window = []
         img = []
@@ -126,6 +127,10 @@ class ROSBagExtractor:
             # render 360 view
             lidar_images = generate_lidar_2d_front_view(points, cmap=self.cmap)
 
+            result['intensity'][str(timestamp)] = lidar_images['intensity']
+            result['distance'][str(timestamp)] = lidar_images['distance']
+            result['height'][str(timestamp)] = lidar_images['height']
+            
             img.extend(
                 map(self.convert_img, [
                     lidar_images['intensity'],
@@ -198,6 +203,7 @@ def main():
     bag = rosbag.Bag(bag_file, 'r')
     topicTypesMap = bag.get_type_and_topic_info().topics
 
+    result = {'intensity': {}, 'distance': {}, 'height': {}}
     for topic, msg, t in bag.read_messages(topics=topics_list):
         msgType = topicTypesMap[topic].msg_type
         if startsec == 0:
@@ -221,8 +227,12 @@ def main():
                 if not args.quiet:
                     extractor.print_msg(msgType, topic, msg, t, startsec)
                 if not args.quiet and not output_dir:
-                    extractor.handle_msg(msgType, topic, msg, t)
-
+                    extractor.handle_msg(msgType, topic, msg, t, result)
+                    
+    f = open(output_dir + '/lidar.p', 'wb')
+    pickle.dump(result, f)
+    f.close()
+    
     print("Max interval between messages per topic")
     for key, value in sorted(maximum_gap_topic.iteritems(), key=lambda (k,v): (v,k)):
         print("    {}: {}".format(key, value))
