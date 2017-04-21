@@ -93,10 +93,9 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     # flip pixels because y-axis increases as the laser angle increases downward
     img = np.flipud(img)
-
     retval = colormap.to_rgba(img, bytes=True, norm=True)[:,:,0:3] if cmap is not None else img
 
-    return retval
+    return retval, img
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
@@ -109,6 +108,7 @@ def generate_lidar_2d_front_view(points, cmap=None):
 
 
 def save_lidar_2d_images(output_dir, count, images):
+    
     for k, img in images.iteritems():
         if k in ('intensity', 'distance', 'height'):
             mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')

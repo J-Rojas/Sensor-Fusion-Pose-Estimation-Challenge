@@ -23,6 +23,7 @@ def rtk2dict(msg, stamp, rtk_dict):
     rtk_dict["ty"].append(msg.pose.pose.position.y)
     rtk_dict["tz"].append(msg.pose.pose.position.z)
     rtk_dict["type_rtk"].append("rtk")
+    #rtk_dict["timestamp_rtk"].append(stamp.to_nsec())
 
 #
 # lidar to dictionary
@@ -30,6 +31,7 @@ def rtk2dict(msg, stamp, rtk_dict):
 def lidar2dict(msg, stamp, lidar_dict):
     lidar_dict["timestamp"].append(stamp.to_nsec())
     lidar_dict["type_lidar"].append("lidar")
+    #lidar_dict["timestamp_lidar"].append(stamp.to_nsec())
 
     
 #
@@ -41,9 +43,11 @@ def interpolate_lidar_with_rtk(bag_filename, outdir):
     topicTypesMap = bag.get_type_and_topic_info().topics
     
     obs_rear_rtk_cols = ["type_rtk", "timestamp", "tx", "ty", "tz"]
+    #obs_rear_rtk_cols = ["type_rtk", "timestamp", "tx", "ty", "tz", "timestamp_rtk"]
     obs_rear_rtk_dict = defaultdict(list)
     
     lidar_cols = ["type_lidar", "timestamp"]
+    #lidar_cols = ["timestamp_lidar", "type_lidar", "timestamp"]
     lidar_dict = defaultdict(list)
     
     for topic, msg, t in bag.read_messages(topics=['/objects/obs1/rear/gps/rtkfix','/velodyne_points']):
@@ -73,13 +77,13 @@ def interpolate_lidar_with_rtk(bag_filename, outdir):
     obs_rear_rtk_df.index.rename('index', inplace=True)
     #obs_rear_rtk_df.to_csv('./obs_rear_rtk_df_datetime.csv', header=True)
     
-    
+    lidar_df_timestamp = lidar_df['timestamp']
     lidar_df['timestamp'] = pd.to_datetime(lidar_df['timestamp'])
     lidar_df.set_index(['timestamp'], inplace=True)
     lidar_df.index.rename('index', inplace=True)
     #lidar_df.to_csv('./lidar_df_datetime.csv', header=True)
 
-    lidar_index_df = pd.DataFrame(index=lidar_df.index)
+    #lidar_index_df = pd.DataFrame(index=lidar_df.index)
     
     #merged = functools.reduce(lambda left, right: pd.merge(
     #    left, right, how='outer', left_index=True, right_index=True), [rtk_df] + lidar_df)
@@ -92,10 +96,8 @@ def interpolate_lidar_with_rtk(bag_filename, outdir):
     #merged.to_csv('./rtk_lidar_merged_interpolated.csv', header=True)
 
     filtered = merged.loc[lidar_df.index]  # back to only lidar rows
-    filtered['timestamp'] = filtered.index.astype('int') 
     
     fname = outdir+'/lidar_interpolated.csv'
-    print(fname)
     filtered.to_csv(fname, header=True)    
     
     return filtered
