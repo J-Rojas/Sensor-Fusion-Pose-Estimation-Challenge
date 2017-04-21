@@ -16,12 +16,17 @@ import pickle
 
 LIDAR_MAX_HEIGHT = 5
 LIDAR_MIN_HEIGHT = -2
-HRES = 0.35  # horizontal resolution (assuming 20Hz setting)
-VRES = 0.4  # vertical res
-VFOV = (-24.9, 2.0)  # Field of view (-ve, +ve) along vertical axis
+
+RES = (0.4, 0.35) #(vertical, horizontal)
+VFOV = (-24.9, 2.0)
 Y_ADJUST = 25
 
-
+RES_RAD = np.array(RES) * (np.pi/180)
+X_MIN = -360.0 / RES[1] / 2
+Y_MIN = VFOV[0] / RES[0]
+X_MAX = int(360.0 / RES[1])
+Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0] + Y_ADJUST)
+    
 def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     assert len(res) == 2, "res must be list/tuple of length 2"
@@ -38,26 +43,12 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
     # L2 norm of X,Y dimension (distance from sensor)
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-
-    v_fov_total = abs(fov[0] - fov[1])
-
-    # radians
-    res_rad = np.array(res) * (np.pi/180)
-
-    # image coordinates
-    x_img = np.arctan2(-y, x) / res_rad[1]
-    y_img = np.arctan2(z, distance) / res_rad[0]
-
+    x_img = np.arctan2(-y, x) / RES_RAD[1]
+    y_img = np.arctan2(z, distance) / RES_RAD[0]
+    
     # shift origin
-    x_min = -360.0 / res[1] / 2
-    x_img -= x_min
-    x_max = 360.0 / res[1]
-
-    y_min = fov[0] / res[0]
-    y_img -= y_min
-    y_max = v_fov_total / res[0]
-
-    y_max += y_adjust
+    x_img -= X_MIN    
+    y_img -= Y_MIN
 
     colormap = matplotlib.cm.ScalarMappable(cmap=cmap) if cmap is not None else None
     min_val = 0
@@ -80,12 +71,12 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     y_img_int = y_img.astype(int)
     x_img_int = x_img.astype(int)
-    img = np.ones((int(y_max) + 1, int(x_max) + 1), dtype=np.float64) * min_val
-    norm = np.ones((int(y_max) + 1, int(x_max) + 1)) * 10000
+    img = np.ones((Y_MAX + 1, X_MAX + 1)) * min_val
+    norm = np.ones((Y_MAX + 1, X_MAX + 1)) * 10000
 
     # should only keep point nearest to observer for duplicate x,y values
     for x, y, p, l in zip(x_img_int, y_img_int, pixel_values, l2_norm):
-        y = min(y, int(y_max))
+        y = min(y, Y_MAX)
         y = max(y, 0)
         if norm[y, x] > l:
             img[y, x] = p
