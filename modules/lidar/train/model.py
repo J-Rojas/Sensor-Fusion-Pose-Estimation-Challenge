@@ -6,7 +6,7 @@ import numpy as np
 from numpy import random
 import cv2
 
-from keras.layers import Input, concatenate, Reshape
+from keras.layers import Input, concatenate, Reshape, BatchNormalization
 from keras.layers.convolutional import Conv2D, MaxPooling2D, Conv2DTranspose
 from keras.models import Model
 from keras.utils.np_utils import to_categorical
@@ -17,8 +17,9 @@ BATCH_SIZE = 32
 EPOCHS = 10
 
 def build_model(use_regression=False):
-    inputs = Input(shape=INPUT_SHAPE, name="input")
-    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1')(inputs)
+    inputs = Input(shape=INPUT_SHAPE, name='input')
+    normalized = BatchNormalization(name='normalize')(inputs)
+    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1')(normalized)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2')(conv1)
     conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3')(conv2)
     deconv4 = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv4')(conv3)
@@ -27,7 +28,7 @@ def build_model(use_regression=False):
     #classification task
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a')(concat_deconv4)
     concat_deconv5a = concatenate([conv1, deconv5a], name='concat_deconv5a')
-    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='relu', name='deconv6a')(concat_deconv5a)
+    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='softmax', name='deconv6a')(concat_deconv5a)
 
     #regression task
     if use_regression:
@@ -49,7 +50,8 @@ def build_model(use_regression=False):
     return model
 
 def test(model):
-    path = 'sample/9_f/lidar_360/1491843463372931936_'
+    #please change path if needed
+    path = '../../sample/9_f/lidar_360/1491843463372931936_'
     height_img = cv2.imread(path + 'height.png') 
     height_gray = cv2.cvtColor(height_img, cv2.COLOR_RGB2GRAY)
     distance_img = cv2.imread(path + 'distance.png') 
