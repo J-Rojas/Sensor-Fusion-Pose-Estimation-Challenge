@@ -142,8 +142,8 @@ class ROSBagExtractor:
 
             # save files
             if self.output_dir is not None:
-                save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp, lidar_images)
-                save_lidar_2d_images(self.output_dir + '/topdown/', timestamp, {'density': density_top_down})
+                save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp.to_nsec(), lidar_images)
+                save_lidar_2d_images(self.output_dir + '/topdown/', timestamp.to_nsec(), {'density': density_top_down})
 
             if not self.quiet:
                 window.extend([
