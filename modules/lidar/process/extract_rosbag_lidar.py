@@ -34,7 +34,7 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
     y = points[:, 1]
     z = points[:, 2]
     r = points[:, 3]
-
+    
     # L2 norm of X,Y dimension (distance from sensor)
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
@@ -80,7 +80,7 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     y_img_int = y_img.astype(int)
     x_img_int = x_img.astype(int)
-    img = np.ones((int(y_max) + 1, int(x_max) + 1)) * min_val
+    img = np.ones((int(y_max) + 1, int(x_max) + 1), dtype=np.float64) * min_val
     norm = np.ones((int(y_max) + 1, int(x_max) + 1)) * 10000
 
     # should only keep point nearest to observer for duplicate x,y values
