@@ -100,16 +100,22 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
-    img_intensity = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
-    img_distance = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
-    img_height = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
+    img_intensity, float_intensity = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
+    img_distance, float_distance = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
+    img_height, float_height = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
 
-    return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height}
+    return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height,
+            'intensity_float': float_intensity, 'distance_float': float_distance, 'height_float': float_height}
 
 
 def save_lidar_2d_images(output_dir, count, images):
     for k, img in images.iteritems():
-        mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+        if k in ('intensity', 'distance', 'height'):
+            mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+        if k in ('intensity_float', 'distance_float', 'height_float'):
+            f = open('./{}/{}_{}.lidar.p'.format(output_dir, count, k) , 'wb')
+            pickle.dump(images[k], f)
+            f.close()
 
 def main():
     """Extract velodyne points and project to 2D images from a ROS bag
