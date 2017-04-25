@@ -5,14 +5,12 @@ import sensor_msgs.point_cloud2
 import matplotlib as mpl
 mpl.use('Agg')  #Skip using X11
 import matplotlib.pyplot as plt
+import matplotlib
 from itertools import repeat
 
 
 startsec = 0
-
-# unit is meter
-max_range = 120
-
+LIDAR_MAX_DENSITY_SQ_METER=1500
 
 def generate_value_channel(x_range, y_range, width_grid_length, height_grid_length):
     width = x_range[1] - x_range[0]
@@ -37,15 +35,23 @@ def normalize(channel):
             if channel[i][j] > 0:
                 channel[i][j] = 255 * min(np.log(channel[i][j] + 1) / log64, 1)
     return channel
-    
+
 
 # generate birds view for one frame
-def generate_birds_eye_view(arrPoints, t, res=(0.2, 0.2)):
+def generate_birds_eye_view(arrPoints, t, res, max_range=120, cmap='gray'):
     points = np.array(arrPoints)
     bins = (np.arange(-max_range, max_range, res[1]), np.arange(-max_range, max_range, res[0]))
     density_channel, x_edges, y_edges = np.histogram2d(points[:, 0], points[:, 1], bins=bins)
     density_norm = normalize(density_channel)
-    return density_norm
+    density_norm = np.flipud(np.fliplr(density_norm))
+
+    colormap = matplotlib.cm.ScalarMappable(cmap=cmap,
+                                            norm=matplotlib.colors.Normalize(
+                                                vmin=0,
+                                                vmax=LIDAR_MAX_DENSITY_SQ_METER*res[0])
+                                            )
+    retval = colormap.to_rgba(density_norm, bytes=True, norm=True)[:,:,0:3]
+    return retval
 
 
 def load(topic, msg, time):
@@ -61,10 +67,10 @@ def load(topic, msg, time):
             arrPoints.append(point[:4])
     return arrPoints
 
- 
+
 def read(dataset, skip, topics_list):
     """
-    return an image of 
+    return an image of
     """
     startsec = 0
 

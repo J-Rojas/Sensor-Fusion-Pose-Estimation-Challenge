@@ -26,7 +26,7 @@ X_MIN = -360.0 / RES[1] / 2
 Y_MIN = VFOV[0] / RES[0]
 X_MAX = int(360.0 / RES[1])
 Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0] + Y_ADJUST)
-    
+
 def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
     assert len(res) == 2, "res must be list/tuple of length 2"
@@ -39,15 +39,15 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
     y = points[:, 1]
     z = points[:, 2]
     r = points[:, 3]
-    
+
     # L2 norm of X,Y dimension (distance from sensor)
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     x_img = np.arctan2(-y, x) / RES_RAD[1]
     y_img = np.arctan2(z, distance) / RES_RAD[0]
-    
+
     # shift origin
-    x_img -= X_MIN    
+    x_img -= X_MIN
     y_img -= Y_MIN
 
     colormap = matplotlib.cm.ScalarMappable(cmap=cmap) if cmap is not None else None
@@ -90,16 +90,16 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
-    img_intensity, float_intensity = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
-    img_distance, float_distance = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
-    img_height, float_height = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
+    img_intensity, float_intensity = lidar_2d_front_view(points, res=RES, fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
+    img_distance, float_distance = lidar_2d_front_view(points, res=RES, fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
+    img_height, float_height = lidar_2d_front_view(points, res=RES, fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
 
     return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height,
             'intensity_float': float_intensity, 'distance_float': float_distance, 'height_float': float_height}
 
 
 def save_lidar_2d_images(output_dir, count, images):
-    
+
     for k, img in images.iteritems():
         if k in ('intensity', 'distance', 'height'):
             mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
@@ -118,17 +118,17 @@ def main():
 
     args = parser.parse_args()
     bag_file = args.bag_file
-    output_dir = args.output_dir 
+    output_dir = args.output_dir
     if not os.path.isfile(bag_file):
         print('bag_file ' + bag_file + ' does not exist')
         sys.exit()
-        
+
     if not os.path.isdir(output_dir):
         print('output_dir ' + output_dir + ' does not exist')
         sys.exit()
-        
+
     print("Extract velodyne_points from {} into {}".format(args.bag_file, args.output_dir))
-    
+
     bag = rosbag.Bag(bag_file, "r")
     result = {'intensity': {}, 'distance': {}, 'height': {}}
     for topic, msg, t in bag.read_messages(topics=['/velodyne_points']):
@@ -144,11 +144,11 @@ def main():
     f = open(output_dir + '/lidar.p', 'wb')
     pickle.dump(result, f)
     f.close()
-    
-    
-    
-    #Load pickle: 
-    #input  
+
+
+
+    #Load pickle:
+    #input
     '''
     f = open(output_dir + '/lidar.p', 'rb')
     pickle_data = pickle.load(f)
@@ -159,7 +159,7 @@ def main():
             print(t)
             print(np.shape(value))
     '''
-    
+
     #output
     '''
     distance
@@ -174,7 +174,7 @@ def main():
     1490149174663355139
     (93, 1029)
     ...
-    
+
     '''
     return
 
