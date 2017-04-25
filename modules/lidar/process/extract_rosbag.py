@@ -110,7 +110,7 @@ class ROSBagExtractor:
 
             if not self.quiet:
                 window.append(self.get_window(topic, cv_img))
-            img.append(self.convert_img(cv_img))
+                img.append(self.convert_img(cv_img))
 
             name = 'image'
             if 'center' in topic:
@@ -135,7 +135,7 @@ class ROSBagExtractor:
             # render 360 view
             lidar_images = generate_lidar_2d_front_view(points, cmap=self.cmap)
 
-            if not(pickle):
+            if not(self.pickle):
                 del lidar_images['intensity_float']
                 del lidar_images['distance_float']
                 del lidar_images['height_float']
@@ -144,21 +144,22 @@ class ROSBagExtractor:
             result['distance'][str(timestamp)] = lidar_images['distance']
             result['height'][str(timestamp)] = lidar_images['height']
 
-            img.extend(
-                map(self.convert_img, [
-                    lidar_images['intensity'],
-                    lidar_images['distance'],
-                    lidar_images['height'],
-                    density_top_down
-                ])
-            )
-
             # save files
             if self.output_dir is not None:
                 save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp.to_nsec(), lidar_images)
                 self.save_images(self.output_dir + '/topdown/', timestamp.to_nsec(), {'density': density_top_down})
 
             if not self.quiet:
+
+                img.extend(
+                    map(self.convert_img, [
+                        lidar_images['intensity'],
+                        lidar_images['distance'],
+                        lidar_images['height'],
+                        density_top_down
+                    ])
+                )
+
                 window.extend([
                     self.get_window(topic + '/360/intensity', lidar_images['intensity']),
                     self.get_window(topic + '/360/distance', lidar_images['distance']),
@@ -246,9 +247,6 @@ def main():
                 if not(args.quiet) or output_dir:
                     extractor.handle_msg(msgType, topic, msg, t, result)
 
-    #f = open(output_dir + '/lidar.p', 'wb')
-    #pickle.dump(result, f)
-    #f.close()
     #Load pickle:
     #input
     '''
