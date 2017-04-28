@@ -148,6 +148,7 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     # transform coordinate system of obstacle from base gps to lidar position
     obs_poses = obstacle_coordinate_base2lidar(obs_rear_rtk_rec, cap_rear_rtk_rec, cap_front_rtk_rec, mdr)
     
+    # update obstacle position wrt. lidar position
     for ind, entry in enumerate(obs_poses):
         obs_rear_rtk_filtered.iloc[ind,2] = entry['tx']
         obs_rear_rtk_filtered.iloc[ind,3] = entry['ty']
