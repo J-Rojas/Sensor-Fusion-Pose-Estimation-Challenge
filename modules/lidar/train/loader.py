@@ -96,9 +96,9 @@ def get_data_and_ground_truth(csv_sources):
                 
                 for row2 in readCSV_2:
                     ts = row2['timestamp']
-                    tx = row2['tx']
-                    ty = row2['ty']
-                    tz = row2['tz']
+                    tx = row2['tx_obs_rear']
+                    ty = row2['ty_obs_rear']
+                    tz = row2['tz_obs_rear']
                     
                     pickle_dir_prefix = dir+"/lidar_360/"+ts
                     pickle_dir_and_prefix.append(pickle_dir_prefix)
