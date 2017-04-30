@@ -9,28 +9,12 @@ from collections import defaultdict
 import PyKDL as kd
 import numpy as np
 import argparse
-from didiCompetition.tracklets.python.bag_to_kitti import get_obstacle_pos, estimate_obstacle_poses
+from didiCompetition.tracklets.python.bag_to_kitti import get_obstacle_pos, estimate_obstacle_poses, rtk2dict, interpolate_to_camera
 
 
 # notes
 # convert stamps to .to_nsec() in extract_rosbag.py while saving lidar images
 #
-
-#
-# rtk to dictionary
-#
-def rtk2dict(msg, stamp, rtk_dict, rtk_type):
-    rtk_dict["timestamp"].append(stamp.to_nsec())
-    rtk_dict["tx"].append(msg.pose.pose.position.x)
-    rtk_dict["ty"].append(msg.pose.pose.position.y)
-    rtk_dict["tz"].append(msg.pose.pose.position.z)
-   
-    if (rtk_type == 'obs_rear'):
-        rtk_dict["obs_rear_rtk"].append(rtk_type)
-    elif (rtk_type == 'cap_rear'):
-         rtk_dict["cap_rear_rtk"].append(rtk_type)
-    elif (rtk_type == 'cap_front'):
-        rtk_dict["cap_front_rtk"].append(rtk_type)
      
 #
 # lidar to dictionary
@@ -40,7 +24,10 @@ def lidar2dict(msg, stamp, lidar_dict):
     lidar_dict["cap_lidar"].append("cap_lidar")
     #lidar_dict["timestamp_lidar"].append(stamp.to_nsec())
 
- 
+
+#
+# coordinate transformation of obstacle centroid from base gps to lidar
+# 
 def obstacle_coordinate_base2lidar(obs_rear_rtk, cap_rear_rtk, cap_front_rtk, mdr):
 
     lrg_to_gps = [mdr[0]['gps_l'], -mdr[0]['gps_w'], mdr[0]['gps_h']]
@@ -64,13 +51,13 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     bag = rosbag.Bag(bag_filename, 'r')
     topicTypesMap = bag.get_type_and_topic_info().topics
     
-    obs_rear_rtk_cols = ["obs_rear_rtk", "timestamp", "tx", "ty", "tz"]
+    obs_rear_rtk_cols = ["obs_rear_rtk", "timestamp", "tx", "ty", "tz", "rx", "ry", "rz", "t_tx", "t_ty", "t_tz"]
     obs_rear_rtk_dict = defaultdict(list)
     
-    cap_rear_rtk_cols = ["cap_rear_rtk", "timestamp", "tx", "ty", "tz"]
+    cap_rear_rtk_cols = ["cap_rear_rtk", "timestamp", "tx", "ty", "tz", "rx", "ry", "rz"]
     cap_rear_rtk_dict = defaultdict(list)
     
-    cap_front_rtk_cols = ["cap_front_rtk", "timestamp", "tx", "ty", "tz"]
+    cap_front_rtk_cols = ["cap_front_rtk", "timestamp", "tx", "ty", "tz", "rx", "ry", "rz"]
     cap_front_rtk_dict = defaultdict(list)
     
     lidar_cols = ["cap_lidar", "timestamp"]
@@ -85,77 +72,57 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
             lidar2dict(msg, t, lidar_dict)
         elif topic == '/objects/obs1/rear/gps/rtkfix':
             assert(msgType == 'nav_msgs/Odometry')
-            rtk2dict(msg, t, obs_rear_rtk_dict, 'obs_rear' ) 
+            rtk2dict(msg, obs_rear_rtk_dict) 
         elif topic == '/objects/capture_vehicle/front/gps/rtkfix':
             assert(msgType == 'nav_msgs/Odometry')
-            rtk2dict(msg, t, cap_front_rtk_dict, 'cap_front' ) 
+            rtk2dict(msg, cap_front_rtk_dict) 
         elif topic == '/objects/capture_vehicle/rear/gps/rtkfix':
             assert(msgType == 'nav_msgs/Odometry')
-            rtk2dict(msg, t, cap_rear_rtk_dict, 'cap_rear' ) 
+            rtk2dict(msg, cap_rear_rtk_dict) 
             
   
     obs_rear_rtk_df = pd.DataFrame(data=obs_rear_rtk_dict, columns=obs_rear_rtk_cols)
     cap_rear_rtk_df = pd.DataFrame(data=cap_rear_rtk_dict, columns=cap_rear_rtk_cols)
     cap_front_rtk_df = pd.DataFrame(data=cap_front_rtk_dict, columns=cap_front_rtk_cols)  
-    lidar_df = pd.DataFrame(data=lidar_dict, columns=lidar_cols)    
-    #lidar_df.to_csv('./lidar_df.csv', header=True)
+    lidar_df = pd.DataFrame(data=lidar_dict, columns=lidar_cols) 
     
-    # Camera dataframe needs to be indexed by timestamp for interpolation
-    obs_rear_rtk_df['timestamp'] = pd.to_datetime(obs_rear_rtk_df['timestamp'])
-    obs_rear_rtk_df.set_index(['timestamp'], inplace=True)
-    obs_rear_rtk_df.index.rename('index', inplace=True)
-    #obs_rear_rtk_df.to_csv('./obs_rear_rtk_df_datetime.csv', header=True)
- 
-    cap_rear_rtk_df['timestamp'] = pd.to_datetime(cap_rear_rtk_df['timestamp'])
-    cap_rear_rtk_df.set_index(['timestamp'], inplace=True)
-    cap_rear_rtk_df.index.rename('index', inplace=True)
-
-    cap_front_rtk_df['timestamp'] = pd.to_datetime(cap_front_rtk_df['timestamp'])
-    cap_front_rtk_df.set_index(['timestamp'], inplace=True)
-    cap_front_rtk_df.index.rename('index', inplace=True)
-    
-    #lidar_df_timestamp = lidar_df['timestamp']
+    obs_rear_rtk_df.to_csv(os.path.join(outdir, 'obstacle_rear_rtk.csv'), index=False)
+    cap_rear_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk.csv'), index=False)
+    cap_front_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk.csv'), index=False)     
+    lidar_df.to_csv(os.path.join(outdir,'./lidar_df.csv'), index=False)
+        
+    # obstale rear rtk, capture front/rear rtk data will be interpolated to lidar timestamp
     lidar_df['timestamp'] = pd.to_datetime(lidar_df['timestamp'])
     lidar_df.set_index(['timestamp'], inplace=True)
     lidar_df.index.rename('index', inplace=True)
-    #lidar_df.to_csv('./lidar_df_datetime.csv', header=True)
-    
-    #merged = functools.reduce(lambda left, right: pd.merge(
-    #    left, right, how='outer', left_index=True, right_index=True), [lidar_df] + [obs_rear_rtk_df, cap_rear_rtk_df, cap_front_rtk_df])
-    
-    #filtered = merged.loc[lidar_df.index]  # back to only lidar rows
-    #fname = outdir+'/lidar_interpolated.csv'
-    #filtered.to_csv(fname, header=True)    
-    
-        
-    obs_rear_rtk_merged = pd.merge(lidar_df, obs_rear_rtk_df, how='outer', left_index=True, right_index=True)
-    obs_rear_rtk_merged.interpolate(method='time', inplace=True, limit=100, limit_direction='both')
-    obs_rear_rtk_filtered = obs_rear_rtk_merged.loc[lidar_df.index]  # back to only lidar rows
-    fname = outdir+'/obs_rear_rtk_filtered.csv'
-    obs_rear_rtk_filtered.to_csv(fname, header=True)
-    obs_rear_rtk_rec = obs_rear_rtk_filtered.to_dict(orient='records')
-    
-    cap_rear_rtk_merged = pd.merge(lidar_df, cap_rear_rtk_df, how='outer', left_index=True, right_index=True)
-    cap_rear_rtk_merged.interpolate(method='time', inplace=True, limit=100, limit_direction='both')
-    cap_rear_rtk_filtered = cap_rear_rtk_merged.loc[lidar_df.index]  # back to only lidar rows
-    cap_rear_rtk_rec = cap_rear_rtk_filtered.to_dict(orient='records')
+    lidar_index_df = pd.DataFrame(index=lidar_df.index)
+ 
+    obs_rear_rtk_interp = interpolate_to_camera(lidar_index_df, obs_rear_rtk_df)
+    obs_rear_rtk_interp.to_csv(os.path.join(outdir, 'obstacle_rear_rtk_interp.csv'), header=True)
+    obs_rear_rtk_interp_rec = obs_rear_rtk_interp.to_dict(orient='records')
+   
+    cap_rear_rtk_interp = interpolate_to_camera(lidar_index_df, cap_rear_rtk_df)
+    cap_rear_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk_interp.csv'), header=True)
+    cap_rear_rtk_interp_rec = cap_rear_rtk_interp.to_dict(orient='records')
 
-    cap_front_rtk_merged = pd.merge(lidar_df, cap_front_rtk_df, how='outer', left_index=True, right_index=True)
-    cap_front_rtk_merged.interpolate(method='time', inplace=True, limit=100, limit_direction='both')
-    cap_front_rtk_filtered = cap_front_rtk_merged.loc[lidar_df.index]  # back to only lidar rows
-    cap_front_rtk_rec = cap_front_rtk_filtered.to_dict(orient='records')
+    cap_front_rtk_interp = interpolate_to_camera(lidar_index_df, cap_front_rtk_df)
+    cap_front_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk_interp.csv'), header=True)
+    cap_front_rtk_interp_rec = cap_front_rtk_interp.to_dict(orient='records')
   
     # transform coordinate system of obstacle from base gps to lidar position
-    obs_poses = obstacle_coordinate_base2lidar(obs_rear_rtk_rec, cap_rear_rtk_rec, cap_front_rtk_rec, mdr)
+    obs_poses_interpolated = obstacle_coordinate_base2lidar(obs_rear_rtk_interp_rec, cap_rear_rtk_interp_rec, cap_front_rtk_interp_rec, mdr)
+    
+    thefile = open(os.path.join(outdir, 'obs_poses_interp_transformed.txt'), 'w')
+    for item in obs_poses_interpolated:
+        thefile.write("%s\n" % item)
     
     # update obstacle position wrt. lidar position
-    for ind, entry in enumerate(obs_poses):
-        obs_rear_rtk_filtered.iloc[ind,2] = entry['tx']
-        obs_rear_rtk_filtered.iloc[ind,3] = entry['ty']
-        obs_rear_rtk_filtered.iloc[ind,4] = entry['tz']
+    #for ind, entry in enumerate(obs_poses):
+    #    obs_rear_rtk_filtered.iloc[ind,2] = entry['tx']
+    #    obs_rear_rtk_filtered.iloc[ind,3] = entry['ty']
+    #    obs_rear_rtk_filtered.iloc[ind,4] = entry['tz']
 
-    fname = outdir+'/obs_rear_rtk_transformed.csv'
-    obs_rear_rtk_filtered.to_csv(fname, header=True)
+    
       
 if __name__ == '__main__':
 
