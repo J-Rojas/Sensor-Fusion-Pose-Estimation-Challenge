@@ -110,18 +110,13 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     cap_front_rtk_interp_rec = cap_front_rtk_interp.to_dict(orient='records')
   
     # transform coordinate system of obstacle from base gps to lidar position
-    obs_poses_interpolated = obstacle_coordinate_base2lidar(obs_rear_rtk_interp_rec, cap_rear_rtk_interp_rec, cap_front_rtk_interp_rec, mdr)
+    obs_poses_interp_transform = obstacle_coordinate_base2lidar(obs_rear_rtk_interp_rec, cap_rear_rtk_interp_rec, cap_front_rtk_interp_rec, mdr)
     
     thefile = open(os.path.join(outdir, 'obs_poses_interp_transformed.txt'), 'w')
-    for item in obs_poses_interpolated:
+    for item in obs_poses_interp_transform:
         thefile.write("%s\n" % item)
     
-    # update obstacle position wrt. lidar position
-    #for ind, entry in enumerate(obs_poses):
-    #    obs_rear_rtk_filtered.iloc[ind,2] = entry['tx']
-    #    obs_rear_rtk_filtered.iloc[ind,3] = entry['ty']
-    #    obs_rear_rtk_filtered.iloc[ind,4] = entry['tz']
-
+    return obs_poses_interp_transform
     
       
 if __name__ == '__main__':
@@ -155,4 +150,4 @@ if __name__ == '__main__':
         print('Unable to read file: %s' % metadata)
         sys.exit()
 
-    interpolate_lidar_with_rtk(dataset, metadata, outdir)    
+    obs_poses_interp_transform = interpolate_lidar_with_rtk(dataset, metadata, outdir)    
