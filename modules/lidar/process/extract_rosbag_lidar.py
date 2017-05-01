@@ -90,9 +90,9 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
-    img_intensity, float_intensity = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
-    img_distance, float_distance = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
-    img_height, float_height = lidar_2d_front_view(points, res=(VRES, HRES), fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
+    img_intensity, float_intensity = lidar_2d_front_view(points, res=RES, fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
+    img_distance, float_distance = lidar_2d_front_view(points, res=RES, fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
+    img_height, float_height = lidar_2d_front_view(points, res=RES, fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
 
     return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height,
             'intensity_float': float_intensity, 'distance_float': float_distance, 'height_float': float_height}
