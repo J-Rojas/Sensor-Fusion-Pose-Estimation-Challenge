@@ -17,10 +17,11 @@ def xml_to_dict(data):
     return xp.data(fromstring(data))
 
 def clean_items_list(data):
-    items = data.get('tracklets', {}).get('item', [])
-    cleaned = []
-    for count, item in enumerate(items):
-        objID = count
+    tracklets = data.get('tracklets', {})
+    if type(tracklets.get('item')) is not list:
+        item = tracklets.get('item', {})
+        cleaned = []
+        objID = 0
         objType = item.get('objectType', '')
         first_frame = item.get('first_frame', 0)
         h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
@@ -36,22 +37,45 @@ def clean_items_list(data):
                 'ry': pose['ry'],
                 'rz': pose['rz'],
                 'width': w,
-                'heigth': h,
+                'height': h,
                 'depth': l,
             })
+    else:
+        items = tracklets.get('item', [])
+        cleaned = []
+        for count, item in enumerate(items):
+            objID = count
+            objType = item.get('objectType', '')
+            first_frame = item.get('first_frame', 0)
+            h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
+            for frame, pose in enumerate(item.get('poses', {}).get('item', [])):
+                cleaned.append({
+                    'object_id': objID,
+                    'object_type': objType,
+                    'frame_id': first_frame + frame,
+                    'tx': pose['tx'],
+                    'ty': pose['ty'],
+                    'tz': pose['tz'],
+                    'rx': pose['rx'],
+                    'ry': pose['ry'],
+                    'rz': pose['rz'],
+                    'width': w,
+                    'height': h,
+                    'depth': l,
+                })
     return cleaned
 
 #
 # get timestamps of each image frame. currently using topic name
-# '/kitti/camera_color_left/image_raw' to count the frames.
-# Udacity data will have a different topic due to one color camera
+# '/image_raw' to count the frames.
+# Kitti vs Udacity data will have a different topic due to one color camera
 #
 def get_camera_frame_timestamps(bag):
 
    timestamps = []
    topicTypesMap = bag.get_type_and_topic_info().topics
 
-   for topic, msg, t in bag.read_messages(topics=['/kitti/camera_color_left/image_raw']):
+   for topic, msg, t in bag.read_messages(topics=['/image_raw']):
 
        msgType = topicTypesMap[topic].msg_type
        assert(msgType == 'sensor_msgs/Image')
@@ -67,7 +91,6 @@ def put_timestamps_with_frame_ids(data, timestamps):
         frame_id = items['frame_id']
         item_timestamp = timestamps[frame_id]
         items['timestamp'] = item_timestamp
-
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
