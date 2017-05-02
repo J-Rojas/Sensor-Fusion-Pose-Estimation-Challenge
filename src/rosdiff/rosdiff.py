@@ -29,6 +29,8 @@ def compare_summaries(summary1, summary2):
                 'count': summary1[topic]['count'],
                 'tsDiffs': summary1[topic]['count'],
                 'maxTSDiff': 0,
+                'mean': 0,
+                'std': 0,
             }
             continue
 
@@ -41,19 +43,25 @@ def compare_summaries(summary1, summary2):
         ts1 = val1['times']
         ts2 = val2['times']
 
-        dts = [abs(a - b) for a,b in zip(ts1, ts2)]
+        dts = [a - b for a,b in zip(ts1, ts2)]
         tsDiffs = 0
         maxDiff = 0
         for t in dts:
-            if t >= 0.001:
+            ta = abs(t)
+            if ta >= 0.001:
                 tsDiffs += 1
-            if t > maxDiff:
-                maxDiff = t
+            if ta > maxDiff:
+                maxDiff = ta
+        a = np.array(dts)
+        mean = np.mean(a)
+        std = np.std(a)
 
         diffs[topic] = {
             'count': diffCount + tsDiffs,
             'tsDiffs': tsDiffs,
             'maxTSDiff': maxDiff,
+            'mean': mean,
+            'std': std,
         }
 
     for topic in summary2:
@@ -61,6 +69,8 @@ def compare_summaries(summary1, summary2):
             'count': summary2[topic]['count'],
             'tsDiffs': summary2[topic]['count'],
             'maxTSDiff': 0,
+            'mean': 0,
+            'std': 0,
         }
 
     return diffs
@@ -72,6 +82,7 @@ def print_diffs_report(diffs):
         print(topic)
         print('\t# missing/different: %d' % val['count'])
         print('\t# incorrect timestamps: %d' % val['tsDiffs'])
+        print('\ttimestamp differences mean / std (s): %.3f / %.3f' % (val['mean'], val['std']))
         print('\tmaximum difference in timestamps (s): %.3f\n' % val['maxTSDiff'])
 
 if __name__ == '__main__':
