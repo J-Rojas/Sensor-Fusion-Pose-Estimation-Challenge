@@ -66,7 +66,9 @@ def compare_summaries(summary1, summary2):
     return diffs
 
 def print_diffs_report(diffs):
-    for topic, val in diffs.iteritems():
+    topics = sorted(diffs.keys())
+    for topic in topics:
+        val = diffs[topic]
         print(topic)
         print('\t# missing/different: %d' % val['count'])
         print('\t# incorrect timestamps: %d' % val['tsDiffs'])
