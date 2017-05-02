@@ -15,10 +15,11 @@ def xml_to_dict(data):
     return xp.data(fromstring(data))
 
 def clean_items_list(data, startTime):
-    items = data.get('tracklets', {}).get('item', [])
-    cleaned = []
-    for count, item in enumerate(items):
-        objID = count
+    tracklets = data.get('tracklets', {})
+    if type(tracklets.get('item')) is not list:
+        item = tracklets.get('item', {})
+        cleaned = []
+        objID = 0
         objType = item.get('objectType', '')
         start = item.get('first_frame', 0)
         h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
@@ -37,6 +38,29 @@ def clean_items_list(data, startTime):
                 'heigth': h,
                 'depth': l,
             })
+    else:
+        items = tracklets.get('item', [])
+        cleaned = []
+        for count, item in enumerate(items):
+            objID = count
+            objType = item.get('objectType', '')
+            start = item.get('first_frame', 0)
+            h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
+            for frame, pose in enumerate(item.get('poses', {}).get('item', [])):
+                cleaned.append({
+                    'object_id': objID,
+                    'object_type': objType,
+                    'timestamp': startTime + start + frame,
+                    'tx': pose['tx'],
+                    'ty': pose['ty'],
+                    'tz': pose['tz'],
+                    'rx': pose['rx'],
+                    'ry': pose['ry'],
+                    'rz': pose['rz'],
+                    'width': w,
+                    'heigth': h,
+                    'depth': l,
+                })
     return cleaned
 
 # XXX figure out how to get timestamp
