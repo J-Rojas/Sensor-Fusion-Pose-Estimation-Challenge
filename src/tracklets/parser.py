@@ -35,7 +35,7 @@ def clean_items_list(data, startTime):
                 'ry': pose['ry'],
                 'rz': pose['rz'],
                 'width': w,
-                'heigth': h,
+                'height': h,
                 'depth': l,
             })
     else:
@@ -78,7 +78,6 @@ if __name__ == '__main__':
         f.close()
     except:
         print('Unable to read file: %s' % sys.argv[1])
-        f.close()
         sys.exit()
 
     dataDict = xml_to_dict(data)
@@ -87,4 +86,3 @@ if __name__ == '__main__':
         'data': cleaned,
     })
     print(dataJson)
-
