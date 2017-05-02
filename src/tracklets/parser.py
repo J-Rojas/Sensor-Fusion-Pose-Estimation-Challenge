@@ -23,24 +23,44 @@ def clean_items_list(data, startTime):
         objType = item.get('objectType', '')
         start = item.get('first_frame', 0)
         h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
+        for frame, pose in enumerate(item.get('poses', {}).get('item', [])):
+            cleaned.append({
+                'object_id': objID,
+                'object_type': objType,
+                'timestamp': startTime + start + frame,
+                'tx': pose['tx'],
+                'ty': pose['ty'],
+                'tz': pose['tz'],
+                'rx': pose['rx'],
+                'ry': pose['ry'],
+                'rz': pose['rz'],
+                'width': w,
+                'height': h,
+                'depth': l,
+            })
     else:
         items = tracklets.get('item', [])
-        cleaned = []        
-    for frame, pose in enumerate(item.get('poses', {}).get('item', [])):
-        cleaned.append({
-            'object_id': objID,
-            'object_type': objType,
-            'timestamp': startTime + start + frame,
-            'tx': pose['tx'],
-            'ty': pose['ty'],
-            'tz': pose['tz'],
-            'rx': pose['rx'],
-            'ry': pose['ry'],
-            'rz': pose['rz'],
-            'width': w,
-            'height': h,
-            'depth': l,
-        })
+        cleaned = []
+        for count, item in enumerate(items):
+            objID = count
+            objType = item.get('objectType', '')
+            start = item.get('first_frame', 0)
+            h, w, l = item.get('h', 0), item.get('w', 0), item.get('l', 0)
+            for frame, pose in enumerate(item.get('poses', {}).get('item', [])):
+                cleaned.append({
+                    'object_id': objID,
+                    'object_type': objType,
+                    'timestamp': startTime + start + frame,
+                    'tx': pose['tx'],
+                    'ty': pose['ty'],
+                    'tz': pose['tz'],
+                    'rx': pose['rx'],
+                    'ry': pose['ry'],
+                    'rz': pose['rz'],
+                    'width': w,
+                    'heigth': h,
+                    'depth': l,
+                })
     return cleaned
 
 # XXX figure out how to get timestamp
