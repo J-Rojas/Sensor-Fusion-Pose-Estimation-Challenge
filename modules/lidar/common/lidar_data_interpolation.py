@@ -5,17 +5,20 @@ import json
 import rosbag
 import functools
 import pandas as pd
-from collections import defaultdict
 import PyKDL as kd
 import numpy as np
 import argparse
-from didiCompetition.tracklets.python.bag_to_kitti import get_obstacle_pos, estimate_obstacle_poses, rtk2dict, interpolate_to_camera
+from xml.etree.ElementTree import fromstring
+from xmljson import Parker
 
+from collections import defaultdict
+from didiCompetition.tracklets.python.bag_to_kitti import estimate_obstacle_poses, rtk2dict, interpolate_to_camera
+from tracket_parser import clean_items_list, put_timestamps_with_frame_ids
 
 # notes
 # convert stamps to .to_nsec() in extract_rosbag.py while saving lidar images
 #
-     
+    
 #
 # lidar to dictionary
 #
@@ -44,6 +47,8 @@ def obstacle_coordinate_base2lidar(obs_rear_rtk, cap_rear_rtk, cap_front_rtk, md
 #
 def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
 
+    # read tracklet file and collect timestamp to check for correct transformation
+    cam_timestamps = []
 
     metadata_df = pd.read_csv(metadata_filename, header=0, index_col=None, quotechar="'")
     mdr = metadata_df.to_dict(orient='records')
@@ -64,7 +69,7 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     lidar_dict = defaultdict(list)
     
     for topic, msg, t in bag.read_messages(topics=['/objects/obs1/rear/gps/rtkfix','/velodyne_points',
-                '/objects/capture_vehicle/front/gps/rtkfix','/objects/capture_vehicle/rear/gps/rtkfix']):
+                '/objects/capture_vehicle/front/gps/rtkfix','/objects/capture_vehicle/rear/gps/rtkfix','/image_raw']):
             
         msgType = topicTypesMap[topic].msg_type
         if topic == '/velodyne_points':
@@ -79,6 +84,9 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
         elif topic == '/objects/capture_vehicle/rear/gps/rtkfix':
             assert(msgType == 'nav_msgs/Odometry')
             rtk2dict(msg, cap_rear_rtk_dict) 
+        elif topic == '/image_raw':
+            assert(msgType == 'sensor_msgs/Image')
+            cam_timestamps.append(t.to_nsec())
             
   
     obs_rear_rtk_df = pd.DataFrame(data=obs_rear_rtk_dict, columns=obs_rear_rtk_cols)
@@ -113,15 +121,17 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     obs_poses_interp_transform = obstacle_coordinate_base2lidar(obs_rear_rtk_interp_rec, cap_rear_rtk_interp_rec, cap_front_rtk_interp_rec, mdr)
     
     thefile = open(os.path.join(outdir, 'obs_poses_interp_transformed.txt'), 'w')
-    for item in obs_poses_interp_transform:
+    lidar_timestamps = lidar_df.index.astype('int')
+    for cnt, item in enumerate(obs_poses_interp_transform):
+        item["timestamp_lidar"] = lidar_timestamps[cnt]
         thefile.write("%s\n" % item)
     
-    return obs_poses_interp_transform
+    return obs_poses_interp_transform, cam_timestamps
     
       
 if __name__ == '__main__':
 
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 4:
         print('not enough argument')
         sys.exit()
 
@@ -129,10 +139,12 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default="dataset.bag", help='Dataset/ROSbag name')
     parser.add_argument('--metadata', type=str, default="metadata.csv", help='metadata filename')
     parser.add_argument('--outdir', type=str, default=".", help='output directory')
+    parser.add_argument('--trackletXML', type=str, default="tracklet_labels.xml", help='tracklet XML filename')
     args = parser.parse_args()
     dataset = args.dataset
     metadata = args.metadata
     outdir = args.outdir
+    trackletFile = args.trackletXML
 
     try:
         f = open(dataset)
@@ -150,4 +162,40 @@ if __name__ == '__main__':
         print('Unable to read file: %s' % metadata)
         sys.exit()
 
-    obs_poses_interp_transform = interpolate_lidar_with_rtk(dataset, metadata, outdir)    
+
+    f = open(trackletFile)
+    data = f.read().replace('\n', '')
+    xp = Parker()
+    dataDict = xp.data(fromstring(data))    
+    f.close()    
+    
+    obs_poses_interp_transform, cam_timestamps = interpolate_lidar_with_rtk(dataset, metadata, outdir)
+     
+    # test transformation.
+    
+    # tracklet_dict is the dictionary of object locations from tracklet_labels.xml
+    tracklet_dict = clean_items_list(dataDict)
+    put_timestamps_with_frame_ids(tracklet_dict, cam_timestamps)
+    tracklet_df = pd.DataFrame(data=tracklet_dict,columns=["timestamp","tx","ty","tz","rx","ry","rz"])
+    
+    #thefile = open(os.path.join(outdir, 'tracklet_with_timestamps.txt'), 'w')
+    #for item in tracklet_dict:
+    #    thefile.write("%s\n" % item)
+   
+    # obs_poses_interp_transform is the dictionary of object locations obtained with transformation
+    lidar_df = pd.DataFrame(data=obs_poses_interp_transform, columns=["timestamp_lidar","tx","ty","tz","rx","ry","rz"]) 
+    lidar_df['timestamp_lidar'] = pd.to_datetime(lidar_df['timestamp_lidar'])
+    lidar_df.set_index(['timestamp_lidar'], inplace=True)
+    lidar_df.index.rename('index', inplace=True)
+ 
+    # merge both dictionary and interpolate tracklet_dict object locations to lidar timestamps
+    tracklet_interp2lidar = interpolate_to_camera(lidar_df, tracklet_df)
+    tracklet_interp2lidar.to_csv(os.path.join(outdir, 'tracklet_interp2lidar.csv'), header=True)
+  
+    # merged dataframe has object location columns both from tracklet_xml and transformed object location.
+    # compare them. difference should be small
+    print(max(abs(tracklet_interp2lidar['tx_x']-tracklet_interp2lidar['tx_y'])))
+    print(max(abs(tracklet_interp2lidar['ty_x']-tracklet_interp2lidar['ty_y'])))
+    print(max(abs(tracklet_interp2lidar['tz_x']-tracklet_interp2lidar['tz_y'])))
+     
+    
