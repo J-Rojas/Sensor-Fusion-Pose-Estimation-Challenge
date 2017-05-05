@@ -4,7 +4,7 @@
 import math
 import numpy as np
 import random
-from transforms3d._gohlketransforms import rotation_matrix, translation_matrix, concatenate_matrices
+from tf.transformations import rotation_matrix, translation_matrix, concatenate_matrices
 
 '''
     Transform a point cloud by rotation around z-axis and translation in (x, y) space.    
