@@ -4,7 +4,7 @@ popd > /dev/null
 trap "exit" INT TERM
 trap "kill 0" INT
 rosparam set use_sim_time true
-roslaunch $SCRIPTPATH/../../didi-competition/mkz-description/tf.launch & 
+roslaunch $SCRIPTPATH/../../didi_competition/mkz-description/tf.launch & 
 pid[0]=$!
 roslaunch velodyne_pointcloud 32e_points.launch &
 pid[1]=$!
