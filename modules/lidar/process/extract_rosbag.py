@@ -19,16 +19,20 @@ class ROSBagExtractor:
     def __init__(self,
                  window_max_width=875,
                  topdown_res=.2,
+                 topdown_max_range=120,
                  cmap=None,
                  output_dir=None,
-                 quiet=False):
+                 quiet=False,
+                 pickle=False):
         self.windows = {}
         self.bridge = CvBridge()
         self.window_max_width = window_max_width
         self.cmap = cmap
         self.output_dir = output_dir
         self.topdown_res = (topdown_res, topdown_res)
+        self.topdown_max_range = topdown_max_range
         self.quiet=quiet
+        self.pickle=pickle
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -39,7 +43,7 @@ class ROSBagExtractor:
                 os.makedirs(self.output_dir + '/camera/')
 
     @staticmethod
-    def save_images(output_dir, name, count, image):
+    def save_image(output_dir, name, count, image):
         mpimg.imsave('./{}/{}_{}.png'.format(output_dir, name, count), image)
 
     @staticmethod
@@ -87,6 +91,11 @@ class ROSBagExtractor:
         return self.windows[topic]
 
     @staticmethod
+    def save_images(output_dir, count, images):
+        for k, img in images.iteritems():
+            mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+
+    @staticmethod
     def convert_img(img):
         return pyglet.image.ImageData(img.shape[1], img.shape[0], 'RGB', np.flipud(img).tobytes())
 
@@ -101,7 +110,7 @@ class ROSBagExtractor:
 
             if not self.quiet:
                 window.append(self.get_window(topic, cv_img))
-            img.append(self.convert_img(cv_img))
+                img.append(self.convert_img(cv_img))
 
             name = 'image'
             if 'center' in topic:
@@ -112,7 +121,7 @@ class ROSBagExtractor:
                 name = 'right'
 
             if self.output_dir is not None:
-                self.save_images(self.output_dir + '/camera/', name, timestamp, cv_img)
+                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
@@ -120,32 +129,37 @@ class ROSBagExtractor:
             points = np.array(list(points))
 
             # render top down point cloud
-            density_top_down = generate_birds_eye_view(points, timestamp, res=(.4,.4))
+            density_top_down = generate_birds_eye_view(points, timestamp, res=self.topdown_res, max_range=self.topdown_max_range, cmap=self.cmap)
             density_top_down = density_top_down.astype(np.uint8)
-            density_top_down = np.dstack((density_top_down, density_top_down, density_top_down))
 
             # render 360 view
             lidar_images = generate_lidar_2d_front_view(points, cmap=self.cmap)
 
+            if not(self.pickle):
+                del lidar_images['intensity_float']
+                del lidar_images['distance_float']
+                del lidar_images['height_float']
+
             result['intensity'][str(timestamp)] = lidar_images['intensity']
             result['distance'][str(timestamp)] = lidar_images['distance']
             result['height'][str(timestamp)] = lidar_images['height']
-            
-            img.extend(
-                map(self.convert_img, [
-                    lidar_images['intensity'],
-                    lidar_images['distance'],
-                    lidar_images['height'],
-                    density_top_down
-                ])
-            )
 
             # save files
             if self.output_dir is not None:
                 save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp.to_nsec(), lidar_images)
-                save_lidar_2d_images(self.output_dir + '/topdown/', timestamp.to_nsec(), {'density': density_top_down})
+                self.save_images(self.output_dir + '/topdown/', timestamp.to_nsec(), {'density': density_top_down})
 
             if not self.quiet:
+
+                img.extend(
+                    map(self.convert_img, [
+                        lidar_images['intensity'],
+                        lidar_images['distance'],
+                        lidar_images['height'],
+                        density_top_down
+                    ])
+                )
+
                 window.extend([
                     self.get_window(topic + '/360/intensity', lidar_images['intensity']),
                     self.get_window(topic + '/360/distance', lidar_images['distance']),
@@ -169,10 +183,12 @@ def main():
     parser.add_argument('bag_file', type=str, help='ROS Bag name')
     parser.add_argument('--skip', type=int, default="0", help='skip seconds')
     parser.add_argument('--topics', type=str, default=None, help='Topic list to display')
-    parser.add_argument('--topdown_res', type=str, default=.2, help='Topdown image resolution')
+    parser.add_argument('--topdown_res', type=float, default=2, help='Topdown image fidelity (meters/pixel)')
+    parser.add_argument('--topdown_max_range', type=float, default=120, help='Topdown max range (meters)')
     parser.add_argument('--lidar_cmap', type=str, default='jet', help='Colormap for lidar images (Default "jet")')
+    parser.add_argument('--pickle', dest='pickle', default=None, action='store_true', help='Export pickle files')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
-    parser.add_argument('--quiet', dest='quiet', action='store_true')
+    parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
     parser.set_defaults(quiet=False)
 
     args = parser.parse_args()
@@ -197,6 +213,8 @@ def main():
     extractor = ROSBagExtractor(cmap=args.lidar_cmap,
                                 output_dir=output_dir,
                                 topdown_res=args.topdown_res,
+                                topdown_max_range=args.topdown_max_range,
+                                pickle=args.pickle,
                                 quiet=args.quiet)
 
     print("reading rosbag ", bag_file)
@@ -226,14 +244,11 @@ def main():
 
                 if not args.quiet:
                     extractor.print_msg(msgType, topic, msg, t, startsec)
-                if not args.quiet and not output_dir:
+                if not(args.quiet) or output_dir:
                     extractor.handle_msg(msgType, topic, msg, t, result)
-                    
-    f = open(output_dir + '/lidar.p', 'wb')
-    pickle.dump(result, f)
-    f.close()
-    #Load pickle: 
-    #input  
+
+    #Load pickle:
+    #input
     '''
     f = open(output_dir + '/lidar.p', 'rb')
     pickle_data = pickle.load(f)
@@ -244,7 +259,7 @@ def main():
             print(t)
             print(np.shape(value))
     '''
-    
+
     #output
     '''
     distance
@@ -259,7 +274,7 @@ def main():
     1490149174663355139
     (93, 1029)
     ...
-    
+
     '''
     print("Max interval between messages per topic")
     for key, value in sorted(maximum_gap_topic.iteritems(), key=lambda (k,v): (v,k)):
