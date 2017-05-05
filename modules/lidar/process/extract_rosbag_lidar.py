@@ -102,9 +102,9 @@ def save_lidar_2d_images(output_dir, count, images):
 
     for k, img in images.iteritems():
         if k in ('intensity', 'distance', 'height'):
-            mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+            mpimg.imsave('{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
         if k in ('intensity_float', 'distance_float', 'height_float'):
-            f = open('./{}/{}_{}.lidar.p'.format(output_dir, count, k) , 'wb')
+            f = open('{}/{}_{}.lidar.p'.format(output_dir, count, k) , 'wb')
             pickle.dump(images[k], f)
             f.close()
 

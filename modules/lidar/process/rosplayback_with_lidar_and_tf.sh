@@ -1,7 +1,10 @@
+pushd `dirname $0` > /dev/null
+SCRIPTPATH=`pwd`
+popd > /dev/null
 trap "exit" INT TERM
 trap "kill 0" INT
 rosparam set use_sim_time true
-rosrun tf static_transform_publisher 0 0 0 0 0 0 base_link velodyne 100 &
+roslaunch $SCRIPTPATH/../../didi-competition/mkz-description/tf.launch & 
 pid[0]=$!
 roslaunch velodyne_pointcloud 32e_points.launch &
 pid[1]=$!
