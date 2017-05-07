@@ -9,23 +9,22 @@ import os
 import argparse
 import math
 import json
+import cv2
 from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD, X_MAX, Y_ADJUST
 from keras.utils import to_categorical
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-from matplotlib.patches import Polygon, Circle
 
 INPUT_SHAPE = (93, 1029, 2)
 
+print(Y_MIN, Y_MAX, RES_RAD, Y_ADJUST)
+
 def project_2d(tx, ty, tz):
     d = np.sqrt(tx ** 2 + ty ** 2)
-    #l2_norm = np.sqrt(tx ** 2 + ty ** 2 + tz ** 2)
-    #print('d={} l2={}'.format(d, l2_norm))
+    l2_norm = np.sqrt(tx ** 2 + ty ** 2 + tz ** 2)
 
     x_img = np.arctan2(-ty, tx) / RES_RAD[1]
-    y_img = np.arctan2(tz, d) / RES_RAD[0]
+    y_img = np.arcsin(tz/l2_norm) / RES_RAD[0]
+
+    #print('tx={}, ty={}, tz={}, d={} l2={} arcsin={}'.format(tx,ty,tz,d, l2_norm, np.arcsin(tz/l2_norm)))
 
     # shift origin
     x_img -= X_MIN
@@ -36,6 +35,8 @@ def project_2d(tx, ty, tz):
 
     y_img = min(y_img, Y_MAX)
     y_img = max(y_img, 0)
+
+    y_img = int(Y_MAX - y_img)
 
     #return (y_img, x_img)
     return (x_img, y_img)
@@ -48,10 +49,10 @@ def get_bb(tx, ty, tz, l, w, h):
     bbox.append(project_2d(tx-l/2., ty-w/2., tz+h/2.))
     bbox.append(project_2d(tx-l/2., ty-w/2., tz-h/2.))
     bbox.append(project_2d(tx+l/2., ty+w/2., tz+h/2.))
-    bbox.append(project_2d(tx+l/2., ty-w/2., tz+h/2.))
     bbox.append(project_2d(tx+l/2., ty+w/2., tz-h/2.))
+    bbox.append(project_2d(tx+l/2., ty-w/2., tz+h/2.))
     bbox.append(project_2d(tx+l/2., ty-w/2., tz-h/2.))
-    bbox = np.array(bbox)
+
     #print(bbox)
     return bbox
 
@@ -75,21 +76,16 @@ def draw_bb(tx, ty, tz, l, w, h, infile, outfile):
     #print('Centroid: {}'.format(centroid))
     bbox = get_bb(tx, ty, tz, l, w, h)
 
-    #infile = '../sample/10/out/10_distance.png'
-    img = mpimg.imread(infile)
-    fig, ax = plt.subplots(1, figsize=(20, 20))
-    ax.imshow(img)
-    ax.add_patch(Circle(centroid, 3, fill=True, color='red'))
+    img = cv2.imread(infile)
+    cv2.circle(img, centroid, 2, (0, 0, 255), thickness=-1)
 
     for p in bbox[:4]:
-        ax.add_patch(Circle(p, 2, fill=True, color='white'))
+        cv2.circle(img, p, 2, (255, 255, 255), thickness=-1)
     for p in bbox[-4:]:
-        ax.add_patch(Circle(p, 2, fill=True, color='green'))
+        cv2.circle(img, p, 2, (0, 255, 0), thickness=-1)
 
-    ax.axis('off')
-    #outfile = '../sample/10/out/10_distance_bb.png'
-    fig.savefig(outfile)
-    plt.close()
+    #save image
+    cv2.imwrite(outfile, img)
 
 def test():
     #gps_l, gps_w, gps_h = (2.032, 0.7239, 1.6256)
@@ -142,6 +138,8 @@ def main():
     obs1_df = obs1_df.join(lidar_df, on='index', rsuffix='_lidar')
     obs1_df.set_index(['timestamp'], inplace=True)
     all_ts = list(obs1_df.index)
+
+    print(obs1_df)
 
     lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))
     l, w, h = (4.2418, 1.4478, 1.5748)

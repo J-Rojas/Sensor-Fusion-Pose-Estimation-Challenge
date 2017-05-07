@@ -14,18 +14,20 @@ import matplotlib.colors
 import matplotlib.image as mpimg
 import pickle
 
-LIDAR_MAX_HEIGHT = 5
+LIDAR_MAX_HEIGHT = 2
 LIDAR_MIN_HEIGHT = -2
 
-RES = (0.4, 0.35) #(vertical, horizontal)
-VFOV = (-24.9, 2.0)
+RES = (1.33, 0.2) #(vertical, horizontal)
+VFOV = (-30.67, 10.67)
 Y_ADJUST = 25
 
 RES_RAD = np.array(RES) * (np.pi/180)
 X_MIN = -360.0 / RES[1] / 2
 Y_MIN = VFOV[0] / RES[0]
 X_MAX = int(360.0 / RES[1])
-Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0] + Y_ADJUST)
+Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0])
+
+print(Y_MIN, Y_MAX, RES_RAD, Y_ADJUST)
 
 def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
@@ -44,7 +46,7 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     x_img = np.arctan2(-y, x) / RES_RAD[1]
-    y_img = np.arctan2(z, distance) / RES_RAD[0]
+    y_img = np.arcsin(z/l2_norm) / RES_RAD[0]
 
     # shift origin
     x_img -= X_MIN
