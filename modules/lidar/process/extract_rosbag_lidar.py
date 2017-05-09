@@ -14,20 +14,21 @@ import matplotlib.colors
 import matplotlib.image as mpimg
 import pickle
 
-LIDAR_MAX_HEIGHT = 5
+LIDAR_MAX_HEIGHT = 2
 LIDAR_MIN_HEIGHT = -2
 
-RES = (0.4, 0.35) #(vertical, horizontal)
-VFOV = (-24.9, 2.0)
-Y_ADJUST = 25
+RES = (1.33, 0.2) #(vertical, horizontal)
+VFOV = (-30.67, 10.67)
 
 RES_RAD = np.array(RES) * (np.pi/180)
 X_MIN = -360.0 / RES[1] / 2
 Y_MIN = VFOV[0] / RES[0]
 X_MAX = int(360.0 / RES[1])
-Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0] + Y_ADJUST)
+Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0])
 
-def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
+print(Y_MIN, Y_MAX, RES_RAD)
+
+def lidar_2d_front_view(points, res, fov, type, cmap = None):
 
     assert len(res) == 2, "res must be list/tuple of length 2"
     assert len(fov) == 2, "fov must be list/tuple of length 2"
@@ -44,7 +45,7 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
     x_img = np.arctan2(-y, x) / RES_RAD[1]
-    y_img = np.arctan2(z, distance) / RES_RAD[0]
+    y_img = np.arcsin(z/l2_norm) / RES_RAD[0]
 
     # shift origin
     x_img -= X_MIN
@@ -90,9 +91,9 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None, y_adjust=0.0):
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
-    img_intensity, float_intensity = lidar_2d_front_view(points, res=RES, fov=VFOV, type='intensity', y_adjust=Y_ADJUST, cmap=cmap)
-    img_distance, float_distance = lidar_2d_front_view(points, res=RES, fov=VFOV, type='distance', y_adjust=Y_ADJUST, cmap=cmap)
-    img_height, float_height = lidar_2d_front_view(points, res=RES, fov=VFOV, type='height', y_adjust=Y_ADJUST, cmap=cmap)
+    img_intensity, float_intensity = lidar_2d_front_view(points, res=RES, fov=VFOV, type='intensity', cmap=cmap)
+    img_distance, float_distance = lidar_2d_front_view(points, res=RES, fov=VFOV, type='distance', cmap=cmap)
+    img_height, float_height = lidar_2d_front_view(points, res=RES, fov=VFOV, type='height', cmap=cmap)
 
     return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height,
             'intensity_float': float_intensity, 'distance_float': float_distance, 'height_float': float_height}
@@ -102,9 +103,9 @@ def save_lidar_2d_images(output_dir, count, images):
 
     for k, img in images.iteritems():
         if k in ('intensity', 'distance', 'height'):
-            mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+            mpimg.imsave('{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
         if k in ('intensity_float', 'distance_float', 'height_float'):
-            f = open('./{}/{}_{}.lidar.p'.format(output_dir, count, k) , 'wb')
+            f = open('{}/{}_{}.lidar.p'.format(output_dir, count, k) , 'wb')
             pickle.dump(images[k], f)
             f.close()
 

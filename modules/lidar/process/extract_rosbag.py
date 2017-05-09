@@ -13,6 +13,7 @@ from cv_bridge import CvBridge
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 from extract_rosbag_lidar import save_lidar_2d_images
 from common.birds_eye_view_generator import generate_birds_eye_view
+from common.lidar_data_interpolation import interpolate_lidar_with_rtk
 
 class ROSBagExtractor:
 
@@ -22,7 +23,7 @@ class ROSBagExtractor:
                  topdown_max_range=120,
                  cmap=None,
                  output_dir=None,
-                 quiet=False,
+                 display=False,
                  pickle=False):
         self.windows = {}
         self.bridge = CvBridge()
@@ -31,7 +32,7 @@ class ROSBagExtractor:
         self.output_dir = output_dir
         self.topdown_res = (topdown_res, topdown_res)
         self.topdown_max_range = topdown_max_range
-        self.quiet=quiet
+        self.display=display
         self.pickle=pickle
 
         if output_dir is not None:
@@ -44,7 +45,7 @@ class ROSBagExtractor:
 
     @staticmethod
     def save_image(output_dir, name, count, image):
-        mpimg.imsave('./{}/{}_{}.png'.format(output_dir, name, count), image)
+        mpimg.imsave('{}/{}_{}.png'.format(output_dir, name, count), image)
 
     @staticmethod
     def print_msg(msgType, topic, msg, time, startsec):
@@ -93,7 +94,7 @@ class ROSBagExtractor:
     @staticmethod
     def save_images(output_dir, count, images):
         for k, img in images.iteritems():
-            mpimg.imsave('./{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
+            mpimg.imsave('{}/{}_{}.png'.format(output_dir, count, k), images[k], origin='upper')
 
     @staticmethod
     def convert_img(img):
@@ -108,7 +109,7 @@ class ROSBagExtractor:
 
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
-            if not self.quiet:
+            if self.display:
                 window.append(self.get_window(topic, cv_img))
                 img.append(self.convert_img(cv_img))
 
@@ -149,7 +150,7 @@ class ROSBagExtractor:
                 save_lidar_2d_images(self.output_dir + '/lidar_360/', timestamp.to_nsec(), lidar_images)
                 self.save_images(self.output_dir + '/topdown/', timestamp.to_nsec(), {'density': density_top_down})
 
-            if not self.quiet:
+            if self.display:
 
                 img.extend(
                     map(self.convert_img, [
@@ -167,7 +168,7 @@ class ROSBagExtractor:
                     self.get_window(topic + '/topdown/density', density_top_down),
                 ])
 
-        if not self.quiet:
+        if self.display:
             for w, i in zip(window, img):
                 w.switch_to()
                 w.dispatch_events()
@@ -181,7 +182,9 @@ def main():
     appTitle = "Udacity Team-SF: ROSbag viewer"
     parser = argparse.ArgumentParser(description=appTitle)
     parser.add_argument('bag_file', type=str, help='ROS Bag name')
+    parser.add_argument('metadata', type=str, help='Metadata file')
     parser.add_argument('--skip', type=int, default="0", help='skip seconds')
+    parser.add_argument('--display', dest='display', action='store_true', help='Display output')
     parser.add_argument('--topics', type=str, default=None, help='Topic list to display')
     parser.add_argument('--topdown_res', type=float, default=2, help='Topdown image fidelity (meters/pixel)')
     parser.add_argument('--topdown_max_range', type=float, default=120, help='Topdown max range (meters)')
@@ -189,7 +192,7 @@ def main():
     parser.add_argument('--pickle', dest='pickle', default=None, action='store_true', help='Export pickle files')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
-    parser.set_defaults(quiet=False)
+    parser.set_defaults(quiet=False, display=False)
 
     args = parser.parse_args()
 
@@ -215,7 +218,7 @@ def main():
                                 topdown_res=args.topdown_res,
                                 topdown_max_range=args.topdown_max_range,
                                 pickle=args.pickle,
-                                quiet=args.quiet)
+                                display=args.display)
 
     print("reading rosbag ", bag_file)
     bag = rosbag.Bag(bag_file, 'r')
@@ -244,8 +247,11 @@ def main():
 
                 if not args.quiet:
                     extractor.print_msg(msgType, topic, msg, t, startsec)
-                if not(args.quiet) or output_dir:
+                if args.display or output_dir:
                     extractor.handle_msg(msgType, topic, msg, t, result)
+
+    # generate lidar interpolation
+    interpolate_lidar_with_rtk(args.bag_file, args.metadata, output_dir)
 
     #Load pickle:
     #input
