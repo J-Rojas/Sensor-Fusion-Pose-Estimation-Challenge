@@ -56,10 +56,10 @@ def main():
     print(datetime.datetime.now())
     
     checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'), verbose=1, save_weights_only=True)
-    tensorboard = TensorBoard(histogram_freq=1, log_dir='./tensorboard/', write_graph=True, write_images=False)
+    tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), write_graph=True, write_images=False)
     model.fit_generator(generator = data_generator(obs_centroid, obs_size, pickle_dir_and_prefix, 
         BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_LABELS), samples_per_epoch=1000, 
-        nb_epoch=3, callbacks=[checkpointer,tensorboard])
+        nb_epoch=2, callbacks=[checkpointer,tensorboard])
     print("stop time:")
     print(datetime.datetime.now())
     
