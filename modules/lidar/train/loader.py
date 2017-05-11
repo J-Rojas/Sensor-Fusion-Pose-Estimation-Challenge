@@ -5,6 +5,7 @@ import csv
 import sys
 import random
 import pickle
+import pandas as pd
 
 from collections import defaultdict
 from encoder import generate_label
@@ -18,13 +19,16 @@ def usage():
 #
 # read in images/ground truths batch by batch 
 #
-def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_LABELS):
+def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
+    obsl = obs_size[0]
+    obsw = obs_size[1]
+    obsh = obs_size[2]
     
-    images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
-    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_LABELS), dtype=np.uint8)
+    images = np.ndarray(shape=(BATCH_SIZE, NUM_CHANNELS, IMG_HEIGHT, IMG_WIDTH), dtype=float)
+    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
 
     batch_index = 0
     size = len(tx)
@@ -34,30 +38,34 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
 
     while 1:
 	          
+	    ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
+	    random.shuffle(ziplist)
+	    tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
+	          
 	    for ind in range(size):
 	
 	        fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
 	        f = open(fname, 'rb')
 	        pickle_data = pickle.load(f)
 	        img_arr = np.asarray(pickle_data, dtype='float32')
-	        np.copyto(images[batch_index,:,:,0],img_arr)
+	        np.copyto(images[batch_index,0,:,:],img_arr)
 	        f.close();
 		
 	        fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
 	        f = open(fname, 'rb')
 	        pickle_data = pickle.load(f)
 	        img_arr = np.asarray(pickle_data, dtype='float32')
-	        np.copyto(images[batch_index,:,:,1],img_arr)
+	        np.copyto(images[batch_index,1,:,:],img_arr)
 	        f.close();
 		
-	        #fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
-	        #f = open(fname, 'rb')
-	        #pickle_data = pickle.load(f)
-	        #img_arr = np.asarray(pickle_data, dtype='float32')
-	        #np.copyto(image_intensity[batch_index],img_arr)
-	        #f.close();
+	        fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
+	        f = open(fname, 'rb')
+	        pickle_data = pickle.load(f)
+	        img_arr = np.asarray(pickle_data, dtype='float32')
+	        np.copyto(images[batch_index,2,:,:],img_arr)
+	        f.close();
 	        		    
-	        label = generate_label(tx[ind], ty[ind], tz[ind], obs_size[0], obs_size[1], obs_size[2],(IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS))
+	        label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
 	        #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
 	        np.copyto(obj_labels[batch_index], np.uint8(label))
 	        
@@ -65,12 +73,9 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
 	        
 	        if (batch_index >= BATCH_SIZE):
 	            batch_index = 0
-	            yield (images, obj_labels)
+	            channel_last_images = images.transpose(0,2,3,1)
+	            yield (channel_last_images, obj_labels)
 	            
-	    ziplist = list(zip(tx, ty, tz, pickle_dir_and_prefix))
-	    random.shuffle(ziplist)
-	    tx, ty, tz, pickle_dir_and_prefix = zip(*ziplist)
-
 
 #
 # read input csv file to get the list of directories
@@ -80,6 +85,10 @@ def get_data_and_ground_truth(csv_sources):
     txl = []
     tyl = []
     tzl = []
+    obsl = []
+    obsw = []
+    obsh = []
+
     pickle_dir_and_prefix = []
 
     with open(csv_sources) as csvfile:
@@ -89,6 +98,11 @@ def get_data_and_ground_truth(csv_sources):
             dir = row[0]
             interp_lidar_fname = dir+"/obs_poses_interp_transform.csv"
             
+            metadata_file_name = row[1]
+            print(metadata_file_name)
+            metadata_df = pd.read_csv(metadata_file_name, header=0, index_col=None, quotechar="'")
+            mdr = metadata_df.to_dict(orient='records')
+
             with open(interp_lidar_fname) as csvfile_2:
                 readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
                 
@@ -103,9 +117,13 @@ def get_data_and_ground_truth(csv_sources):
                     txl.append(float(tx))
                     tyl.append(float(ty))
                     tzl.append(float(tz))
+                    obsl.append(float(mdr[0]['l']))
+                    obsw.append(float(mdr[0]['w']))
+                    obsh.append(float(mdr[0]['h']))
                     
-    obs_centroid = [txl, tyl, tzl]               
-    return obs_centroid, pickle_dir_and_prefix
+    obs_centroid = [txl, tyl, tzl] 
+    obs_size = [obsl, obsw, obsh]              
+    return obs_centroid, pickle_dir_and_prefix, obs_size
 
 
 

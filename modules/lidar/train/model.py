@@ -16,7 +16,7 @@ from keras.optimizers import Adam
 BATCH_SIZE = 32
 EPOCHS = 10
 
-def build_model(input_shape, use_regression=False):
+def build_model(input_shape, num_classes, use_regression=False):
     inputs = Input(shape=input_shape, name='input')
     inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(inputs)
     normalized = BatchNormalization(name='normalize')(inputs_padded)
@@ -46,7 +46,7 @@ def build_model(input_shape, use_regression=False):
                       loss={'deconv6a': 'categorical_crossentropy', 'deconv6b': 'mse'}, 
                       metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})
     else:
-        flatten = Reshape((-1, 2), name='flatten')(deconv6a_crop)
+        flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
         model = Model(inputs=inputs, outputs=flatten)   
         model.compile(optimizer=Adam(lr=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
         
