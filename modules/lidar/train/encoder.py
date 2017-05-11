@@ -10,12 +10,11 @@ import argparse
 import math
 import json
 import cv2
-from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD, X_MAX, Y_ADJUST
+from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD, X_MAX
 from keras.utils import to_categorical
 
-INPUT_SHAPE = (93, 1029, 2)
 
-print(Y_MIN, Y_MAX, RES_RAD, Y_ADJUST)
+print(Y_MIN, Y_MAX, RES_RAD)
 
 def project_2d(tx, ty, tz):
     d = np.sqrt(tx ** 2 + ty ** 2)
@@ -54,16 +53,17 @@ def get_bb(tx, ty, tz, l, w, h):
     bbox.append(project_2d(tx+l/2., ty-w/2., tz-h/2.))
 
     #print(bbox)
+    bbox = np.array(bbox) 
     return bbox
 
-def generate_label(tx, ty, tz, l, w, h):
+def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE):
     bbox = get_bb(tx, ty, tz, l, w, h)
 
     upper_left_x = bbox.min(axis=0)[0]
     upper_left_y = bbox.min(axis=0)[1]
     lower_right_x = bbox.max(axis=0)[0]
     lower_right_y = bbox.max(axis=0)[1]
-    print upper_left_x, upper_left_y, lower_right_x, lower_right_y
+    #print upper_left_x, upper_left_y, lower_right_x, lower_right_y
 
     label = np.ones(INPUT_SHAPE[:2])
     label[upper_left_x:lower_right_x, upper_left_y:lower_right_y] = 0

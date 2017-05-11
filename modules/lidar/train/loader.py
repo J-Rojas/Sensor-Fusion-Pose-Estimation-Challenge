@@ -5,12 +5,11 @@ import csv
 import sys
 import random
 import pickle
+import pandas as pd
 
 from collections import defaultdict
+from encoder import generate_label
 
-BATCH_SIZE = 32
-IMG_WIDTH = 1029
-IMG_HEIGHT = 93
 
 def usage():
     print('Loads training data with ground truths and generate training batches')
@@ -20,59 +19,63 @@ def usage():
 #
 # read in images/ground truths batch by batch 
 #
-def data_generator(tx, ty, tz, pickle_dir_and_prefix):
+def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES):
+    tx = obs_centroids[0]
+    ty = obs_centroids[1]
+    tz = obs_centroids[2]
+    obsl = obs_size[0]
+    obsw = obs_size[1]
+    obsh = obs_size[2]
+    
+    images = np.ndarray(shape=(BATCH_SIZE, NUM_CHANNELS, IMG_HEIGHT, IMG_WIDTH), dtype=float)
+    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
 
-	image_distace = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH), dtype=float)
-	image_height = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH), dtype=float)	
-	image_intensity = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH), dtype=float)		
-	obj_location = np.ndarray(shape=(BATCH_SIZE,3), dtype=float)
-	
-	batch_index = 0
-	size = len(tx)
-	num_batches = size/BATCH_SIZE
-	size = num_batches*BATCH_SIZE
-	
+    batch_index = 0
+    size = len(tx)
+    num_batches = size/BATCH_SIZE
+    size = num_batches*BATCH_SIZE
 
-	while 1:
-		      
-		for ind in range(size):
+
+    while 1:
+	          
+	    ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
+	    random.shuffle(ziplist)
+	    tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
+	          
+	    for ind in range(size):
+	
+	        fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
+	        f = open(fname, 'rb')
+	        pickle_data = pickle.load(f)
+	        img_arr = np.asarray(pickle_data, dtype='float32')
+	        np.copyto(images[batch_index,0,:,:],img_arr)
+	        f.close();
 		
-		    fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
-		    f = open(fname, 'rb')
-		    pickle_data = pickle.load(f)
-		    img_arr = np.asarray(pickle_data, dtype='float32')
-		    np.copyto(image_distace[batch_index],img_arr)
-		    f.close();
-			
-		    fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
-		    f = open(fname, 'rb')
-		    pickle_data = pickle.load(f)
-		    img_arr = np.asarray(pickle_data, dtype='float32')
-		    np.copyto(image_height[batch_index],img_arr)
-		    f.close();
-			
-		    fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
-		    f = open(fname, 'rb')
-		    pickle_data = pickle.load(f)
-		    img_arr = np.asarray(pickle_data, dtype='float32')
-		    np.copyto(image_intensity[batch_index],img_arr)
-		    f.close();
-		    
-		    obj_location[batch_index][0] = tx[ind]
-		    obj_location[batch_index][1] = ty[ind]
-		    obj_location[batch_index][2] = tz[ind]
-		    
-		    batch_index = batch_index + 1
-		    
-		    if (batch_index >= BATCH_SIZE):
-		        batch_index = 0
-		        yield (image_distace, image_height, image_intensity, obj_location)
-
-
-        ziplist = list(zip(tx, ty, tz, img_dir_and_prefix))
-        random.shuffle(ziplist)
-        tx, ty, tz, img_dir_and_prefix = zip(*ziplist)
-
+	        fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
+	        f = open(fname, 'rb')
+	        pickle_data = pickle.load(f)
+	        img_arr = np.asarray(pickle_data, dtype='float32')
+	        np.copyto(images[batch_index,1,:,:],img_arr)
+	        f.close();
+		
+	        fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
+	        f = open(fname, 'rb')
+	        pickle_data = pickle.load(f)
+	        img_arr = np.asarray(pickle_data, dtype='float32')
+	        np.copyto(images[batch_index,2,:,:],img_arr)
+	        f.close();
+	        		    
+	        label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+	        #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
+	        np.copyto(obj_labels[batch_index], np.uint8(label))
+	        
+	        batch_index = batch_index + 1
+	        
+	        if (batch_index >= BATCH_SIZE):
+	            batch_index = 0
+	            channel_last_images = images.transpose(0,2,3,1)
+	            yield (channel_last_images, obj_labels)
+	            
 
 #
 # read input csv file to get the list of directories
@@ -82,6 +85,10 @@ def get_data_and_ground_truth(csv_sources):
     txl = []
     tyl = []
     tzl = []
+    obsl = []
+    obsw = []
+    obsh = []
+
     pickle_dir_and_prefix = []
 
     with open(csv_sources) as csvfile:
@@ -89,25 +96,34 @@ def get_data_and_ground_truth(csv_sources):
      
         for row in readCSV:
             dir = row[0]
-            interp_lidar_fname = dir+"/lidar_interpolated.csv"
+            interp_lidar_fname = dir+"/obs_poses_interp_transform.csv"
             
+            metadata_file_name = row[1]
+            print(metadata_file_name)
+            metadata_df = pd.read_csv(metadata_file_name, header=0, index_col=None, quotechar="'")
+            mdr = metadata_df.to_dict(orient='records')
+
             with open(interp_lidar_fname) as csvfile_2:
                 readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
                 
                 for row2 in readCSV_2:
                     ts = row2['timestamp']
-                    tx = row2['tx_obs_rear']
-                    ty = row2['ty_obs_rear']
-                    tz = row2['tz_obs_rear']
+                    tx = row2['tx']
+                    ty = row2['ty']
+                    tz = row2['tz']
                     
                     pickle_dir_prefix = dir+"/lidar_360/"+ts
                     pickle_dir_and_prefix.append(pickle_dir_prefix)
-                    txl.append(tx)
-                    tyl.append(ty)
-                    tzl.append(tz)
+                    txl.append(float(tx))
+                    tyl.append(float(ty))
+                    tzl.append(float(tz))
+                    obsl.append(float(mdr[0]['l']))
+                    obsw.append(float(mdr[0]['w']))
+                    obsh.append(float(mdr[0]['h']))
                     
-                    
-    return txl,tyl,tzl,pickle_dir_and_prefix
+    obs_centroid = [txl, tyl, tzl] 
+    obs_size = [obsl, obsw, obsh]              
+    return obs_centroid, pickle_dir_and_prefix, obs_size
 
 
 

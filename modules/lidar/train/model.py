@@ -7,28 +7,32 @@ from numpy import random
 import cv2
 
 from keras.layers import Input, concatenate, Reshape, BatchNormalization
-from keras.layers.convolutional import Conv2D, MaxPooling2D, Conv2DTranspose
+from keras.layers.convolutional import Conv2D, MaxPooling2D, Conv2DTranspose, ZeroPadding2D, Cropping2D
 from keras.models import Model
 from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
 
-INPUT_SHAPE = (93, 1029, 2)
+
 BATCH_SIZE = 32
 EPOCHS = 10
 
-def build_model(use_regression=False):
-    inputs = Input(shape=INPUT_SHAPE, name='input')
-    normalized = BatchNormalization(name='normalize')(inputs)
-    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1')(normalized)
+def build_model(input_shape, num_classes, use_regression=False):
+    inputs = Input(shape=input_shape, name='input')
+    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(inputs)
+    normalized = BatchNormalization(name='normalize')(inputs_padded)
+    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same')(normalized)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2')(conv1)
     conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3')(conv2)
     deconv4 = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv4')(conv3)
-    concat_deconv4 = concatenate([conv2, deconv4], name='concat_deconv4')
+    deconv4_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv4)
+    concat_deconv4 = concatenate([conv2, deconv4_padded], name='concat_deconv4')
 
     #classification task
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a')(concat_deconv4)
-    concat_deconv5a = concatenate([conv1, deconv5a], name='concat_deconv5a')
-    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='softmax', name='deconv6a')(concat_deconv5a)
+    deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
+    concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
+    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='softmax', name='deconv6a', padding='same')(concat_deconv5a)
+    deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
 
     #regression task
     if use_regression:
@@ -42,7 +46,7 @@ def build_model(use_regression=False):
                       loss={'deconv6a': 'categorical_crossentropy', 'deconv6b': 'mse'}, 
                       metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})
     else:
-        flatten = Reshape((-1, 2), name='flatten')(deconv6a)
+        flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
         model = Model(inputs=inputs, outputs=flatten)   
         model.compile(optimizer=Adam(lr=0.001), loss='categorical_crossentropy', metrics=['accuracy'])
         
