@@ -95,26 +95,6 @@ def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
     centroid = project_2d(tx, ty, tz)
     return bbox
 
-def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE):
-    bbox = get_bb(tx, ty, tz, l, w, h)
-
-    upper_left_x = bbox.min(axis=0)[0]
-    upper_left_y = bbox.min(axis=0)[1]
-    lower_right_x = bbox.max(axis=0)[0]
-    lower_right_y = bbox.max(axis=0)[1]
-    #print upper_left_x, upper_left_y, lower_right_x, lower_right_y
-    label = np.ones(INPUT_SHAPE[:2])
-    for x in range(upper_left_x, lower_right_x, 1):
-        for y in range(upper_left_y, lower_right_y, 1):
-            if distance(centroid, (x, y)) <= r:
-                label[x, y] = 0
-
-    #label[upper_left_x:lower_right_x, upper_left_y:lower_right_y] = 0
-    y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
-
-    return y
-
-
 def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='circle'):
     if method == 'circle':
         y = generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE)
