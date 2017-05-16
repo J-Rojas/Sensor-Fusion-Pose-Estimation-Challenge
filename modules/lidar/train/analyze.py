@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import pandas as pd
 import numpy as np
 import argparse
@@ -5,6 +7,7 @@ import csv
 import matplotlib.pyplot as plt
 import matplotlib.axes
 import matplotlib.colors
+from common.csv_utils import foreach_dirset, load_lidar_interp
 
 def convert_to_polar(transforms):
     arr = []
@@ -31,27 +34,19 @@ def main():
     x = []
     y = []
 
-    with open(input_csv_file) as csvfile:
-        readCSV = csv.reader(csvfile, delimiter=',')
+    def process(dirset):
 
-        for row in readCSV:
-            dir = row[0]
-            interp_lidar_fname = dir_prefix+"/"+dir+"/obs_poses_interp_transform.csv"
+        # load lidar ground truth
+        lidar_coord = load_lidar_interp(dirset.dir)
 
-            lidar_coord = []
+        # determine polar coordinates
+        polar_coord = convert_to_polar(lidar_coord)
 
-            with open(interp_lidar_fname, 'r') as f:
-                reader = csv.DictReader(f)
-                # load lidar transformations
-                for row in reader:
-                    lidar_coord.append(row)
+        # generate histogram
+        x.extend(list(map(lambda x: x['rho'], polar_coord)))
+        y.extend(list(map(lambda x: x['phi'], polar_coord)))
 
-                # determine polar coordinates
-                polar_coord = convert_to_polar(lidar_coord)
-
-                # generate histogram
-                x.extend(list(map(lambda x: x['rho'], polar_coord)))
-                y.extend(list(map(lambda x: x['phi'], polar_coord)))
+    foreach_dirset(input_csv_file, dir_prefix, process)
 
     hist = np.histogram2d(x, y, bins=[24, 90])
     norm=matplotlib.colors.LogNorm(vmin=1, vmax=1000, clip=True)
