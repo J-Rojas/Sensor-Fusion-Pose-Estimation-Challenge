@@ -25,8 +25,6 @@ from tracket_parser import clean_items_list, put_timestamps_with_frame_ids
 def lidar2dict(msg, stamp, lidar_dict):
     lidar_dict["timestamp"].append(stamp.to_nsec())
     lidar_dict["cap_lidar"].append("cap_lidar")
-    #lidar_dict["timestamp_lidar"].append(stamp.to_nsec())
-
 
 #
 # coordinate transformation of obstacle centroid from base gps to lidar
@@ -95,10 +93,10 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     cap_front_rtk_df = pd.DataFrame(data=cap_front_rtk_dict, columns=cap_front_rtk_cols)
     lidar_df = pd.DataFrame(data=lidar_dict, columns=lidar_cols)
 
-    obs_rear_rtk_df.to_csv(os.path.join(outdir, 'obstacle_rear_rtk.csv'), index=False)
-    cap_rear_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk.csv'), index=False)
-    cap_front_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk.csv'), index=False)
-    lidar_df.to_csv(os.path.join(outdir,'./lidar_df.csv'), index=False)
+    #obs_rear_rtk_df.to_csv(os.path.join(outdir, 'obstacle_rear_rtk.csv'), index=False)
+    #cap_rear_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk.csv'), index=False)
+    #cap_front_rtk_df.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk.csv'), index=False)
+    #lidar_df.to_csv(os.path.join(outdir,'./lidar_df.csv'), index=False)
 
     # obstale rear rtk, capture front/rear rtk data will be interpolated to lidar timestamp
     lidar_df['timestamp'] = pd.to_datetime(lidar_df['timestamp'])
@@ -107,26 +105,37 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
     lidar_index_df = pd.DataFrame(index=lidar_df.index)
 
     obs_rear_rtk_interp = interpolate_to_camera(lidar_index_df, obs_rear_rtk_df)
-    obs_rear_rtk_interp.to_csv(os.path.join(outdir, 'obstacle_rear_rtk_interp.csv'), header=True)
+    #obs_rear_rtk_interp.to_csv(os.path.join(outdir, 'obstacle_rear_rtk_interp.csv'), header=True)
     obs_rear_rtk_interp_rec = obs_rear_rtk_interp.to_dict(orient='records')
 
     cap_rear_rtk_interp = interpolate_to_camera(lidar_index_df, cap_rear_rtk_df)
-    cap_rear_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk_interp.csv'), header=True)
+    #cap_rear_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_rear_rtk_interp.csv'), header=True)
     cap_rear_rtk_interp_rec = cap_rear_rtk_interp.to_dict(orient='records')
 
     cap_front_rtk_interp = interpolate_to_camera(lidar_index_df, cap_front_rtk_df)
-    cap_front_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk_interp.csv'), header=True)
+    #cap_front_rtk_interp.to_csv(os.path.join(outdir, 'capture_vehicle_front_rtk_interp.csv'), header=True)
     cap_front_rtk_interp_rec = cap_front_rtk_interp.to_dict(orient='records')
 
     # transform coordinate system of obstacle from base gps to lidar position
     obs_poses_interp_transform = obstacle_coordinate_base2lidar(obs_rear_rtk_interp_rec, cap_rear_rtk_interp_rec, cap_front_rtk_interp_rec, mdr)
 
-    thefile = open(os.path.join(outdir, 'obs_poses_interp_transformed.txt'), 'w')
+    obs_poses_interp_transform_dict = defaultdict(list)
     lidar_timestamps = lidar_df.index.astype('int')
     for cnt, item in enumerate(obs_poses_interp_transform):
         item["timestamp_lidar"] = lidar_timestamps[cnt]
-        thefile.write("%s\n" % item)
+        obs_poses_interp_transform_dict["timestamp"].append(lidar_timestamps[cnt])
+        obs_poses_interp_transform_dict["tx"].append(item["tx"])
+        obs_poses_interp_transform_dict["ty"].append(item["ty"])
+        obs_poses_interp_transform_dict["tz"].append(item["tz"])
+        obs_poses_interp_transform_dict["rx"].append(item["rx"])
+        obs_poses_interp_transform_dict["ry"].append(item["ry"])
+        obs_poses_interp_transform_dict["rz"].append(item["rz"])
 
+    
+    obs_poses_interp_transform_cols = ['timestamp', 'tz', 'tx', 'ty', 'rx', 'ry', 'rz']
+    obs_poses_interp_transform_df = pd.DataFrame(data=obs_poses_interp_transform_dict, columns=obs_poses_interp_transform_cols)
+    obs_poses_interp_transform_df.to_csv(os.path.join(outdir, 'obs_poses_interp_transform.csv'), index=False) 
+        
     return obs_poses_interp_transform, cam_timestamps
 
 
