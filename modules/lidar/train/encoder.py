@@ -185,7 +185,7 @@ def test():
     #gps_l, gps_w, gps_h = (2.032, 0.7239, 1.6256)
     l, w, h = (4.2418,1.4478,1.5748)
 
-    #centroid of obstacle after interplation
+    #centroid of obstacle after interpolation
     #tx, ty, tz = (0.699597401296,-76.989,2.17780519741) #old 10.bag
     tx, ty, tz = (-0.8927325054898647, -3.6247593094278256, -0.648832347271497) #10.bag
     #tx, ty, tz = (-6.81401019142,-84.618,2.0329898085) #old 4_f.bag
@@ -193,13 +193,14 @@ def test():
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_circle.png', 'circle')
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_inner.png', 'inner_rect')
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_outer.png', 'outer_rect')
-
-
+    y = generate_label(tx, ty, tz, l, w, h, (32, 1801, 3), method='circle')
+    print(np.nonzero(y[:,0])[0].shape[0])
+    
 def main():
     parser = argparse.ArgumentParser(description="Draw bounding box on projected 2D lidar images.")
-    parser.add_argument("input_dir", help="Input directory.")
-    parser.add_argument("output_dir", help="Output directory.")
-    parser.add_argument("shape", help="bounding box shape: circle, outer_rect, inner_rect")
+    parser.add_argument("--input_dir", help="Input directory.")
+    parser.add_argument("--output_dir", help="Output directory.")
+    parser.add_argument("--shape", help="bounding box shape: circle, outer_rect, inner_rect", default="circle")
 
     args = parser.parse_args()
     input_dir = args.input_dir
@@ -215,34 +216,14 @@ def main():
         sys.exit()
 
     #input_dir needs to contain the following:
-    #lidar_interpolated.csv, objects_obs1_rear_rtk.csv, and a sub directory lidar_360 that contains lidar images
-    files = os.listdir(input_dir)
-    for f in files:
-        if f == 'lidar_df.csv':
-            print('found ' + f)
-            lidar_df = pd.read_csv(os.path.join(input_dir, 'lidar_df.csv'), index_col=None).reset_index()
-        if f == 'obs_poses_interp_transformed.txt':
-            print('found ' + f)
-            obs_file = os.path.join(input_dir, 'obs_poses_interp_transformed.txt')
-            #write to a json file to be read into a dataframe (needs double quotes around keys)
-            obs_json_file = os.path.join(input_dir, 'obs_poses_interp_transformed_json.txt')
-
-            with open(obs_file, 'r') as file:
-                lines = '\n'.join(line.strip().replace('\'', '"') for line in file).strip()
-                with open(obs_json_file, 'w') as out:
-                    out.write(lines)
-
-                obs1_df = pd.read_json(obs_json_file, lines=True).reset_index()
-
-    if lidar_df is None or obs1_df is None:
-        print('missing lidar_df.csv or obs_poses_interp_transformed.txt')
+    #obs_poses_interp_transform.csv, and a sub directory lidar_360 that contains lidar images    
+    obs_file = os.path.join(input_dir, 'obs_poses_interp_transform.csv')
+    if not os.path.exists(obs_file):
+        print('missing obs_poses_interp_transform.csv')
         sys.exit()
-
-    obs1_df = obs1_df.join(lidar_df, on='index', rsuffix='_lidar')
-    obs1_df.set_index(['timestamp'], inplace=True)
-    all_ts = list(obs1_df.index)
-
-    print(obs1_df)
+        
+    obs_df = pd.read_csv(obs_file, index_col=['timestamp'])    
+    #print(obs_df)
 
     lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))
     l, w, h = (4.2418, 1.4478, 1.5748)
@@ -251,15 +232,13 @@ def main():
         if f.endswith('_distance.png'):
             ts = int(f.split('_')[0])
 
-            if ts in list(obs1_df.index):
-                tx = obs1_df.loc[ts]['tx']
-                ty = obs1_df.loc[ts]['ty']
-                tz = obs1_df.loc[ts]['tz']
+            if ts in list(obs_df.index):
+                tx = obs_df.loc[ts]['tx']
+                ty = obs_df.loc[ts]['ty']
+                tz = obs_df.loc[ts]['tz']
                 infile = os.path.join(input_dir, 'lidar_360', f)
                 outfile = os.path.join(output_dir, f.split(".")[0] + '_bb.png')
-                draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)
-            else:
-                print('timestamp not in lidar_df {} not in index'.format(ts))
+                draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
 
 
 if __name__ == '__main__':
