@@ -9,7 +9,7 @@ import argparse
 import math
 import json
 import cv2
-from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD, X_MAX
+from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD
 from keras.utils import to_categorical
 
 
@@ -69,6 +69,7 @@ def get_bb(tx, ty, tz, l, w, h):
 def distance(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
+
 def get_inner_rect(tx, ty, tz, l, w, h):
     bbox = get_bb(tx, ty, tz, l, w, h)
     sorted_corners = bbox[:4]
@@ -78,6 +79,7 @@ def get_inner_rect(tx, ty, tz, l, w, h):
     lower_right_x = sorted_corners.max(axis=0)[0]
     lower_right_y = sorted_corners.max(axis=0)[1]
     return (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+
 
 def get_outer_rect(tx, ty, tz, l, w, h):
     bbox = get_bb(tx, ty, tz, l, w, h)
@@ -89,11 +91,27 @@ def get_outer_rect(tx, ty, tz, l, w, h):
     lower_right_y = sorted_corners.max(axis=0)[1]
     return (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
+
 def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
-    r = min((lower_right_y - upper_left_y)/2.0, (lower_right_x - upper_left_x)/2.0)
+    r = min((lower_right_y - upper_left_y) / 2.0, (lower_right_x - upper_left_x) / 2.0)
     centroid = project_2d(tx, ty, tz)
-    return bbox
+
+    label = np.ones(INPUT_SHAPE[:2])
+
+    #print(upper_left_x, lower_right_x)
+    #print(upper_left_y, lower_right_y)
+
+    for x in range(upper_left_x, lower_right_x, 1):
+        for y in range(upper_left_y, lower_right_y, 1):
+            if distance(centroid, (x, y)) <= r:
+                label[y, x] = 0
+
+    # label[upper_left_x:lower_right_x, upper_left_y:lower_right_y] = 0
+    y = to_categorical(label, num_classes=2)  # 1st dimension: on-vehicle, 2nd dimension: off-vehicle
+
+    return y
+
 
 def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='circle'):
     if method == 'circle':
@@ -103,14 +121,15 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='circle'):
             (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
         elif method == 'outer_rect':
             (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_outer_rect(tx, ty, tz, l, w, h)
-        print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+        #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
         label = np.ones(INPUT_SHAPE[:2])
-        label[upper_left_x:lower_right_x, upper_left_y:lower_right_y] = 0
+        label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 0
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
 
     #print(np.nonzero(y[:,0])[0].shape[0]) #number of on-vehicle pixels
     return y
+
 
 def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
     centroid = project_2d(tx, ty, tz)
@@ -134,6 +153,7 @@ def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
     #save image
     cv2.imwrite(outfile, img)
 
+
 def draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method='inner_rect'):
     centroid = project_2d(tx, ty, tz)
     img = cv2.imread(infile)
@@ -153,11 +173,13 @@ def draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method='inner_rect'):
     #save image
     cv2.imwrite(outfile, img)
 
+
 def draw_bb(tx, ty, tz, l, w, h, infile, outfile, method='circle'):
     if method == 'circle':
         draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile)
     else:
         draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method)
+
 
 def test():
     #gps_l, gps_w, gps_h = (2.032, 0.7239, 1.6256)
@@ -171,6 +193,7 @@ def test():
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_circle.png', 'circle')
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_inner.png', 'inner_rect')
     draw_bb(tx, ty, tz, l, w, h, '../sample/10/out/lidar_360/1490991699437114271_distance.png', '../sample/10_1490991699437114271_distance_outer.png', 'outer_rect')
+
 
 def main():
     parser = argparse.ArgumentParser(description="Draw bounding box on projected 2D lidar images.")
