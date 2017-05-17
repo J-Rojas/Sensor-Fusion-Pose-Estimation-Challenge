@@ -19,6 +19,11 @@ def usage():
     print('Usage: python loader.py --input_csv_file [csv file of data folders]')
 
 
+def data_number_of_batches_per_epoch(obs_centroids, BATCH_SIZE):
+    tx = obs_centroids[0]
+    size = len(tx)
+    return int(size / BATCH_SIZE)
+
 #
 # read in images/ground truths batch by batch
 #
@@ -34,50 +39,48 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
     obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
 
     batch_index = 0
-    size = len(tx)
-    num_batches = size/BATCH_SIZE
+    num_batches = data_number_of_batches_per_epoch(obs_centroids, BATCH_SIZE)
     size = num_batches*BATCH_SIZE
-
 
     while 1:
 
-	    ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
-	    random.shuffle(ziplist)
-	    tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
+        ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
+        random.shuffle(ziplist)
+        tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
 
-	    for ind in range(size):
+        for ind in range(size):
 
-	        fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
-	        f = open(fname, 'rb')
-	        pickle_data = pickle.load(f)
-	        img_arr = np.asarray(pickle_data, dtype='float32')
-	        np.copyto(images[batch_index,0,:,:],img_arr)
-	        f.close();
+            fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
+            f = open(fname, 'rb')
+            pickle_data = pickle.load(f)
+            img_arr = np.asarray(pickle_data, dtype='float32')
+            np.copyto(images[batch_index,0,:,:],img_arr)
+            f.close();
 
-	        fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
-	        f = open(fname, 'rb')
-	        pickle_data = pickle.load(f)
-	        img_arr = np.asarray(pickle_data, dtype='float32')
-	        np.copyto(images[batch_index,1,:,:],img_arr)
-	        f.close();
+            fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
+            f = open(fname, 'rb')
+            pickle_data = pickle.load(f)
+            img_arr = np.asarray(pickle_data, dtype='float32')
+            np.copyto(images[batch_index,1,:,:],img_arr)
+            f.close();
 
-	        fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
-	        f = open(fname, 'rb')
-	        pickle_data = pickle.load(f)
-	        img_arr = np.asarray(pickle_data, dtype='float32')
-	        np.copyto(images[batch_index,2,:,:],img_arr)
-	        f.close();
+            fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
+            f = open(fname, 'rb')
+            pickle_data = pickle.load(f)
+            img_arr = np.asarray(pickle_data, dtype='float32')
+            np.copyto(images[batch_index,2,:,:],img_arr)
+            f.close();
 
-	        label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
-	        #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
-	        np.copyto(obj_labels[batch_index], np.uint8(label))
+            label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+            #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
+            np.copyto(obj_labels[batch_index], np.uint8(label))
 
-	        batch_index = batch_index + 1
+            batch_index = batch_index + 1
 
-	        if (batch_index >= BATCH_SIZE):
-	            batch_index = 0
-	            channel_last_images = images.transpose(0,2,3,1)
-	            yield (channel_last_images, obj_labels)
+            if (batch_index >= BATCH_SIZE):
+                batch_index = 0
+                channel_last_images = images.transpose(0,2,3,1)
+                yield (channel_last_images, obj_labels)
 
 
 #
@@ -133,7 +136,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Load training data and ground truths")
     parser.add_argument("--input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
-    parser.add_argument("--dir_prefix", type=str, default="./", help="absolute path to folders")
+    parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
 
     args = parser.parse_args()
     input_csv_file = args.input_csv_file

@@ -16,31 +16,40 @@ from keras.optimizers import Adam
 BATCH_SIZE = 32
 EPOCHS = 10
 
+
 def build_model(input_shape, num_classes, use_regression=False):
     inputs = Input(shape=input_shape, name='input')
     inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(inputs)
     normalized = BatchNormalization(name='normalize')(inputs_padded)
-    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same')(normalized)
-    conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2')(conv1)
-    conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3')(conv2)
-    deconv4 = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv4')(conv3)
+    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(normalized)
+    conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(conv1)
+    conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3',
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(conv2)
+    deconv4 = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv4',
+                              kernel_initializer='random_uniform', bias_initializer='zeros')(conv3)
     deconv4_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv4)
     concat_deconv4 = concatenate([conv2, deconv4_padded], name='concat_deconv4')
 
-    #classification task
-    deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a')(concat_deconv4)
+    # classification task
+    deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
+                               kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
     deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
-    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='softmax', name='deconv6a', padding='same')(concat_deconv5a)
+    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), activation='softmax', name='deconv6a', padding='same',
+                               kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
     deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
 
-    #regression task
+    # regression task
     if use_regression:
-        deconv5b = Conv2DTranspose(24, 5, strides=(2,2), activation='relu', name='deconv5b')(concat_deconv4)
+        deconv5b = Conv2DTranspose(24, 5, strides=(2,2), activation='relu', name='deconv5b',
+                                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
         concat_deconv5b = concatenate([conv1, deconv5b], name='concat_deconv5b')
-        deconv6b = Conv2DTranspose(24, 5, strides=(2,4), activation='relu', name='deconv6b')(concat_deconv5b)
+        deconv6b = Conv2DTranspose(24, 5, strides=(2,4), activation='relu', name='deconv6b',
+                                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5b)
 
-        #TODO: the output layer may need reshaping
+        # TODO: the output layer may need reshaping
         model = Model(inputs=inputs, outputs=[deconv6a, deconv6b])
         model.compile(optimizer=Adam(lr=0.001), 
                       loss={'deconv6a': 'categorical_crossentropy', 'deconv6b': 'mse'}, 
@@ -53,8 +62,9 @@ def build_model(input_shape, num_classes, use_regression=False):
     print(model.summary())    
     return model
 
+
 def test(model):
-    #please change path if needed
+    # please change path if needed
     path = '../../sample/9_f/lidar_360/1491843463372931936_'
     height_img = cv2.imread(path + 'height.png') 
     height_gray = cv2.cvtColor(height_img, cv2.COLOR_RGB2GRAY)

@@ -121,8 +121,8 @@ class ROSBagExtractor:
             elif 'right' in topic:
                 name = 'right'
 
-            if self.output_dir is not None:
-                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
+            #if self.output_dir is not None:
+            #    self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
