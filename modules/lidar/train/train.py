@@ -15,7 +15,7 @@ NUM_CLASSES = 2
 INPUT_SHAPE = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
 
 import tensorflow as tf
-from model import build_model
+from model import build_model, custom_weighted_cross_entropy
 from loader import get_data_and_ground_truth, data_generator
 from keras.callbacks import ModelCheckpoint, TensorBoard
 
@@ -45,7 +45,7 @@ def main():
 	
     
     # determine list of data sources and ground truths to load
-    obs_centroid, pickle_dir_and_prefix, obs_size = get_data_and_ground_truth(input_csv_file)
+    obs_centroid, pickle_dir_and_prefix, obs_size = get_data_and_ground_truth(input_csv_file)    
     
     print("start time:")
     print(datetime.datetime.now())
