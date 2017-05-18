@@ -16,7 +16,7 @@ NUM_CLASSES = 2
 INPUT_SHAPE = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
 
 import tensorflow as tf
-from model import build_model, custom_weighted_cross_entropy
+from model import build_model
 from loader import get_data_and_ground_truth, data_generator, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard
 
