@@ -13,6 +13,7 @@ IMG_WIDTH = 1801
 IMG_HEIGHT = 32
 NUM_CHANNELS = 3
 NUM_CLASSES = 2
+K_NEGATIVE_SAMPLE_RATIO_WEIGHT = 4
 INPUT_SHAPE = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
 
 import tensorflow as tf
@@ -37,6 +38,11 @@ def main():
     outdir = args.outdir
     dir_prefix = args.dir_prefix
 
+    # calculate population statistic - they are only calculated for the training set since the weights will remain
+    # unchanged in the validation/test set
+    population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
+    print("Train statistics: ", population_statistics_train)
+
     if args.modelFile != "":
         with open(args.modelFile, 'r') as jfile:
             print("reading existing model and weights")
@@ -44,16 +50,15 @@ def main():
             weightsFile = args.modelFile.replace('json', 'h5')
             model.load_weights(weightsFile)
     else:
-        model = build_model(INPUT_SHAPE, NUM_CLASSES)
+        model = build_model(
+            INPUT_SHAPE,
+            NUM_CLASSES,
+            obj_to_bkg_ratio=population_statistics_train['positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
+            avg_obj_size=population_statistics_train['average_area']
+        )
         # save the model
         with open(os.path.join(outdir, 'lidar_model.json'), 'w') as outfile:
             json.dump(model.to_json(), outfile)
-
-    # calculate population statistic
-    population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
-    population_statistics_val = calculate_population_weights(validation_file, dir_prefix, INPUT_SHAPE)
-    print("Train statistics: ", population_statistics_train)
-    print("Validation statistics: ", population_statistics_val)
 
     # determine list of data sources and ground truths to load
     train_data = get_data_and_ground_truth(train_file, dir_prefix)
@@ -80,7 +85,9 @@ def main():
         ),
         validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
         epochs=EPOCHS,
-        callbacks=[checkpointer, tensorboard])
+        callbacks=[checkpointer, tensorboard],
+        verbose=1
+    )
     print("stop time:")
     print(datetime.datetime.now())
 

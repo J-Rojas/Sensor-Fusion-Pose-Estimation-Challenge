@@ -17,36 +17,48 @@ from keras.optimizers import Adam
 
 BATCH_SIZE = 32
 EPOCHS = 10
-AVG_OBJ_SIZE = 10
-OBJ_TO_BKG_RATIO = 0.08
 
 
-def custom_weighted_cross_entropy(y_true, y_pred):
+def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 
-    softmax = tf.nn.softmax(y_pred, dim=2, name="softmax")    
-    log_softmax = tf.log(softmax, name="log_softmax")
-    neg_log_softmax = tf.scalar_mul(-1.,log_softmax)
-    pixel_loss = tf.reduce_sum(neg_log_softmax,2)
+    def custom_loss(y_true, y_pred):
+        softmax = tf.nn.softmax(y_pred, dim=2, name="softmax")
+        log_softmax = tf.log(softmax, name="log_softmax")
+        neg_log_softmax = tf.scalar_mul(-1., log_softmax)
+        pixel_loss = tf.reduce_sum(neg_log_softmax, 2)
+
+        bkg_frg_areas = tf.reduce_sum(y_true, 1)
+        bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
+
+        labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
+        w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
+
+        frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
+        inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
+        w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
+        w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+
+        w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
+        weighted_loss = tf.multiply(w1_times_w2, tf.expand_dims(pixel_loss, axis=2), name="weighted_loss")
+
+        loss = tf.reduce_sum(weighted_loss)
+
+        # XXX temporarily disable custom weighted categorical cross entropy for validation evaluation
+        loss = K.categorical_crossentropy(softmax, y_true)
+
+        return loss
     
-    bkg_frg_areas = tf.reduce_sum(y_true, 1)        
-    bkg_area, frg_area = tf.split(bkg_frg_areas,2,1,name="split_1")
+    return custom_loss
 
-    labels_bkg, labels_frg = tf.split(y_true,2,2,name="split_2")
-    w1_bkg_weights = tf.scalar_mul(OBJ_TO_BKG_RATIO, labels_bkg)
-        
-    frg_area_tiled = tf.tile(frg_area,tf.stack([1,57632]))
-    inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)   
-    w2_weights = tf.scalar_mul(AVG_OBJ_SIZE, inv_frg_area)
-    w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights,axis=2))
-    
-    w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2") 
-    weighted_loss = tf.multiply(w1_times_w2, tf.expand_dims(pixel_loss,axis=2), name="weighted_loss")
-    
-    loss = tf.reduce_sum(weighted_loss)
-    return loss
-    
 
-def build_model(input_shape, num_classes, use_regression=False):
+def build_model(input_shape, num_classes,
+                use_regression=False,
+                obj_to_bkg_ratio=0.00016,
+                avg_obj_size=1000):
+
+    # set channels last format
+    K.set_image_data_format('channels_last')
+
     inputs = Input(shape=input_shape, name='input')
     inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(inputs)
     normalized = BatchNormalization(name='normalize')(inputs_padded)
@@ -85,8 +97,10 @@ def build_model(input_shape, num_classes, use_regression=False):
                       metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})
     else:
         flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
-        model = Model(inputs=inputs, outputs=flatten)   
-        model.compile(optimizer=Adam(lr=0.001), loss=custom_weighted_cross_entropy, metrics=['accuracy'])
+        model = Model(inputs=inputs, outputs=flatten)
+        model.compile(optimizer=Adam(lr=0.001),
+                      loss=custom_weighted_cross_entropy(obj_to_bkg_ratio, avg_obj_size),
+                      metrics=['accuracy'])
         
     print(model.summary())    
     return model
