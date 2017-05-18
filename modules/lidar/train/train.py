@@ -23,13 +23,17 @@ from keras.callbacks import ModelCheckpoint, TensorBoard
 
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
-    parser.add_argument("--input_csv_file", type=str, default="../data/data_folders.csv", help="list of data folders for training")
+    parser.add_argument("--train_file", type=str, default="../data/train_folders.csv",
+                        help="list of data folders for training")
+    parser.add_argument("--val_file", type=str, default="../data/validation_folders.csv",
+                        help="list of data folders for validation")
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
 
     args = parser.parse_args()
-    input_csv_file = args.input_csv_file
+    train_file = args.train_file
+    validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
 
@@ -46,14 +50,18 @@ def main():
             json.dump(model.to_json(), outfile)
 
     # calculate population statistic
-    population_statistics = calculate_population_weights(input_csv_file, dir_prefix, INPUT_SHAPE)
-    print(population_statistics)
+    population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
+    population_statistics_val = calculate_population_weights(validation_file, dir_prefix, INPUT_SHAPE)
+    print("Train statistics: ", population_statistics_train)
+    print("Validation statistics: ", population_statistics_val)
 
     # determine list of data sources and ground truths to load
-    obs_centroid, pickle_dir_and_prefix, obs_size = get_data_and_ground_truth(input_csv_file, dir_prefix)
+    train_data = get_data_and_ground_truth(train_file, dir_prefix)
+    val_data = get_data_and_ground_truth(validation_file, dir_prefix)
 
     # number of batches per epoch
-    n_batches_per_epoch = data_number_of_batches_per_epoch(obs_centroid, BATCH_SIZE)
+    n_batches_per_epoch_train = data_number_of_batches_per_epoch(train_data[0], BATCH_SIZE)
+    n_batches_per_epoch_val = data_number_of_batches_per_epoch(val_data[0], BATCH_SIZE)
 
     print("start time:")
     print(datetime.datetime.now())
@@ -62,10 +70,15 @@ def main():
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), write_graph=True, write_images=False)
     model.fit_generator(
         data_generator(
-            obs_centroid, obs_size, pickle_dir_and_prefix,
+            train_data[0], train_data[2], train_data[1],
             BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
         ),  # generator
-        n_batches_per_epoch,  # number of batches per epoch
+        n_batches_per_epoch_train,  # number of batches per epoch
+        validation_data=data_generator(
+            val_data[0], val_data[2], val_data[1],
+            BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
+        ),
+        validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
         epochs=EPOCHS,
         callbacks=[checkpointer, tensorboard])
     print("stop time:")
