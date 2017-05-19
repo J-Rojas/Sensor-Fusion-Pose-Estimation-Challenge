@@ -26,7 +26,6 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
 
     def custom_loss(y_true, y_pred):
 
-        print(input_shape)
         max_pixels = input_shape[0] * input_shape[1]
 
         softmax = tf.nn.softmax(y_pred, dim=2)
