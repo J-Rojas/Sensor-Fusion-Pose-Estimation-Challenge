@@ -35,10 +35,10 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
         pixel_loss = tf.multiply(y_true, neglog_softmax, name="pixel_loss")
 
         labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
+        bkg_frg_areas = tf.reduce_sum(y_true, 1)
+        bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
 
         if USE_W1:
-            bkg_frg_areas = tf.reduce_sum(y_true, 1)
-            bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
             w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
         else:
             w1_bkg_weights = labels_bkg
@@ -120,7 +120,7 @@ def build_model(input_shape, num_classes,
         model = Model(inputs=inputs, outputs=flatten)
         model.compile(optimizer=Adam(lr=0.001),
                       loss=custom_weighted_cross_entropy(obj_to_bkg_ratio, avg_obj_size),
-                      metrics=['accuracy'])
+                      metrics=metrics)
         
     print(model.summary())    
     return model
