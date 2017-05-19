@@ -22,9 +22,13 @@ EPOCHS = 10
 USE_W1 = True
 USE_W2 = True
 
-def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
+def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj_size=1000, loss_scaler=1000):
 
     def custom_loss(y_true, y_pred):
+
+        print(input_shape)
+        max_pixels = input_shape[0] * input_shape[1]
+
         softmax = tf.nn.softmax(y_pred, dim=2)
 
         # clip
@@ -44,25 +48,25 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
             w1_bkg_weights = labels_bkg
 
         if USE_W2:
-            frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
-            #frg_area_tiled = tf.Print(frg_area_tiled, ["frg_area_tiled", tf.shape(frg_area_tiled), frg_area_tiled])
+            frg_area_tiled = tf.tile(frg_area, tf.stack([1, max_pixels]))
 
-            frg_area_tiled = K.clip(frg_area_tiled, K.epsilon(), 1)
+            # prevent divide by zero, max is number of pixels
+            frg_area_tiled = K.clip(frg_area_tiled, K.epsilon(), max_pixels)
             inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
-            #inv_frg_area = tf.Print(inv_frg_area, ["inv_frg_area", tf.shape(inv_frg_area), inv_frg_area])
 
             w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
             w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+
         else:
             w2_frg_weights = labels_frg
 
         w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
         weighted_loss = tf.multiply(w1_times_w2, pixel_loss, name="weighted_loss")
+        weighted_loss = tf.scalar_mul(loss_scaler, weighted_loss)
 
         loss = tf.reduce_sum(weighted_loss, -1, name="loss")
-        loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
+        #loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
 
-        # XXX temporarily disable custom weighted categorical cross entropy for validation evaluation
         # loss = K.categorical_crossentropy(softmax, y_true)
 
         return loss
@@ -119,7 +123,7 @@ def build_model(input_shape, num_classes,
         flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
         model = Model(inputs=inputs, outputs=flatten)
         model.compile(optimizer=Adam(lr=0.001),
-                      loss=custom_weighted_cross_entropy(obj_to_bkg_ratio, avg_obj_size),
+                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
         
     print(model.summary())    
