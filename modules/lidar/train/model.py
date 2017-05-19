@@ -22,10 +22,14 @@ EPOCHS = 10
 def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 
     def custom_loss(y_true, y_pred):
-        softmax = tf.nn.softmax(y_pred, dim=2, name="softmax")
-        log_softmax = tf.log(softmax, name="log_softmax")
-        neg_log_softmax = tf.scalar_mul(-1., log_softmax)
-        pixel_loss = tf.reduce_sum(neg_log_softmax, 2)
+        softmax = tf.nn.softmax(y_pred, dim=2)
+
+        # clip
+        softmax = K.clip(softmax, K.epsilon(), 1)
+        log_softmax = tf.log(softmax, name="logsoftmax")
+        neglog_softmax = tf.scalar_mul(-1., log_softmax)
+
+        pixel_loss = tf.multiply(y_true, neglog_softmax, name="pixel_loss")
 
         bkg_frg_areas = tf.reduce_sum(y_true, 1)
         bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
@@ -33,18 +37,19 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
         labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
         w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
 
-        frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
-        inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
-        w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
-        w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+        #frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
+        #inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
+        #w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
+        #w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
 
-        w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
-        weighted_loss = tf.multiply(w1_times_w2, tf.expand_dims(pixel_loss, axis=2), name="weighted_loss")
+        #w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
+        weighted_loss = tf.multiply(w1_bkg_weights, pixel_loss, name="weighted_loss")
 
-        loss = tf.reduce_sum(weighted_loss)
+        loss = tf.reduce_sum(weighted_loss, -1, name="loss")
+        #loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
 
         # XXX temporarily disable custom weighted categorical cross entropy for validation evaluation
-        loss = K.categorical_crossentropy(softmax, y_true)
+        #loss = K.categorical_crossentropy(softmax, y_true)
 
         return loss
     
