@@ -35,7 +35,7 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
     obsw = obs_size[1]
     obsh = obs_size[2]
 
-    images = np.ndarray(shape=(BATCH_SIZE, NUM_CHANNELS, IMG_HEIGHT, IMG_WIDTH), dtype=float)
+    images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
     obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
 
     batch_index = 0
@@ -54,22 +54,22 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,0,:,:],img_arr)
+            np.copyto(images[batch_index,:,:,0],img_arr)
             f.close();
 
             fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,1,:,:],img_arr)
+            np.copyto(images[batch_index,:,:,1],img_arr)
             f.close();
 
             fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,2,:,:],img_arr)
-            f.close();
+            np.copyto(images[batch_index,:,:,2],img_arr)
+            f.close()
 
             label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
             #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
@@ -79,8 +79,7 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
 
             if (batch_index >= BATCH_SIZE):
                 batch_index = 0
-                channel_last_images = images.transpose(0,2,3,1)
-                yield (channel_last_images, obj_labels)
+                yield (images, obj_labels)
 
 
 #

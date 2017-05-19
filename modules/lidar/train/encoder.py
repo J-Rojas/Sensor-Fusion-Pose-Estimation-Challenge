@@ -70,6 +70,12 @@ def distance(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
+def area_from_corners(corner1, corner2):
+    diff_x = abs(corner1[0] - corner2[0])
+    diff_y = abs(corner1[1] - corner2[1])
+    return diff_x * diff_y
+
+
 def get_inner_rect(tx, ty, tz, l, w, h):
     bbox = get_bb(tx, ty, tz, l, w, h)
     sorted_corners = bbox[:4]
@@ -127,7 +133,6 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='circle'):
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
 
-    #print(np.nonzero(y[:,0])[0].shape[0]) #number of on-vehicle pixels
     return y
 
 
