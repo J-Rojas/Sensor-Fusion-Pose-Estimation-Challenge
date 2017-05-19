@@ -18,6 +18,9 @@ from keras.optimizers import Adam
 BATCH_SIZE = 32
 EPOCHS = 10
 
+# Disabling both USE_W1 and USE_W2 should result in typical categorical_cross_entropy loss
+USE_W1 = True
+USE_W2 = True
 
 def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 
@@ -31,25 +34,36 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 
         pixel_loss = tf.multiply(y_true, neglog_softmax, name="pixel_loss")
 
-        bkg_frg_areas = tf.reduce_sum(y_true, 1)
-        bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
-
         labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
-        w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
 
-        #frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
-        #inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
-        #w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
-        #w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+        if USE_W1:
+            bkg_frg_areas = tf.reduce_sum(y_true, 1)
+            bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
+            w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
+        else:
+            w1_bkg_weights = labels_bkg
 
-        #w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
-        weighted_loss = tf.multiply(w1_bkg_weights, pixel_loss, name="weighted_loss")
+        if USE_W2:
+            frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
+            #frg_area_tiled = tf.Print(frg_area_tiled, ["frg_area_tiled", tf.shape(frg_area_tiled), frg_area_tiled])
+
+            frg_area_tiled = K.clip(frg_area_tiled, K.epsilon(), 1)
+            inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
+            #inv_frg_area = tf.Print(inv_frg_area, ["inv_frg_area", tf.shape(inv_frg_area), inv_frg_area])
+
+            w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
+            w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+        else:
+            w2_frg_weights = labels_frg
+
+        w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
+        weighted_loss = tf.multiply(w1_times_w2, pixel_loss, name="weighted_loss")
 
         loss = tf.reduce_sum(weighted_loss, -1, name="loss")
-        #loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
+        loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
 
         # XXX temporarily disable custom weighted categorical cross entropy for validation evaluation
-        #loss = K.categorical_crossentropy(softmax, y_true)
+        # loss = K.categorical_crossentropy(softmax, y_true)
 
         return loss
     
@@ -59,7 +73,8 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 def build_model(input_shape, num_classes,
                 use_regression=False,
                 obj_to_bkg_ratio=0.00016,
-                avg_obj_size=1000):
+                avg_obj_size=1000,
+                metrics=None):
 
     # set channels last format
     K.set_image_data_format('channels_last')
