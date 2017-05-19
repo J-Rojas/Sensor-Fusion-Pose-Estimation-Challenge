@@ -10,13 +10,15 @@ def calculate_sample_statistics(input_shape, lidar_gt, metadata):
     # generate label
     tx, ty, tz = np.float64(lidar_gt['tx']), np.float64(lidar_gt['ty']), np.float64(lidar_gt['tz'])
     l, w, h = np.float64(metadata['l']), np.float64(metadata['w']), np.float64(metadata['h'])
-    label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,0].flatten()
+    label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,1].flatten()
 
     # determine positive samples
     positive = len(np.where(label == 1)[0])
 
     # determine # of samples
     total_samples = input_shape[0] * input_shape[1]
+
+    #print("positive = ", positive, ", total = ", total_samples)
 
     # assuming only one object per lidar frame, area == positive
     return {'positive': positive, 'total': total_samples, 'area': positive, 'count': 1}

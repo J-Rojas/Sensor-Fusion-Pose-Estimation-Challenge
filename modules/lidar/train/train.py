@@ -19,7 +19,47 @@ INPUT_SHAPE = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
 import tensorflow as tf
 from model import build_model
 from loader import get_data_and_ground_truth, data_generator, data_number_of_batches_per_epoch
-from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
+#import sklearn.metrics
+
+
+class PRMetrics(Callback):
+
+    def __init__(self):
+        self.labels = []
+        self.preds = []
+
+    def on_epoch_end(self, epoch, logs=None):
+
+        # TODO: produce metric output
+        precision, recall, fbeta_score, support = 0, 0, 0, 0
+
+        print('precision {}, recall {}, f1 {}, support {}'.format(precision, recall, fbeta_score, support))
+
+        # reset data
+        self.labels = []
+        self.preds = []
+
+    def on_batch_begin(self, batch_index, logs=None):
+        pass
+
+    def on_batch_end(self, batch_index, logs=None):
+        pass
+
+    def update(self, labels, preds):
+
+        # this
+        self.labels.append(labels)
+        self.preds.append(preds)
+
+
+def record_labels(callback):
+
+    def precision_recall(y_true, y_pred):
+        callback.update(y_true, y_pred)
+        return tf.zeros_like([1])
+
+    return precision_recall
 
 
 def main():
@@ -43,6 +83,9 @@ def main():
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
     print("Train statistics: ", population_statistics_train)
 
+    prmetrics = PRMetrics()
+    metrics = ['accuracy', record_labels(prmetrics)]
+
     if args.modelFile != "":
         with open(args.modelFile, 'r') as jfile:
             print("reading existing model and weights")
@@ -54,7 +97,8 @@ def main():
             INPUT_SHAPE,
             NUM_CLASSES,
             obj_to_bkg_ratio=population_statistics_train['positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
-            avg_obj_size=population_statistics_train['average_area']
+            avg_obj_size=population_statistics_train['average_area'],
+            metrics=metrics
         )
         # save the model
         with open(os.path.join(outdir, 'lidar_model.json'), 'w') as outfile:
@@ -85,7 +129,7 @@ def main():
         ),
         validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
         epochs=EPOCHS,
-        callbacks=[checkpointer, tensorboard],
+        callbacks=[checkpointer, tensorboard, prmetrics],
         verbose=1
     )
     print("stop time:")

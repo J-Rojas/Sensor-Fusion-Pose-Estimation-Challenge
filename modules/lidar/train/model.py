@@ -18,10 +18,19 @@ from keras.optimizers import Adam
 BATCH_SIZE = 32
 EPOCHS = 10
 
+# Disabling both USE_W1 and USE_W2 should result in typical categorical_cross_entropy loss
+USE_W1 = True
+USE_W2 = True
 
-def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
+def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj_size=1000, loss_scaler=1000):
 
     def custom_loss(y_true, y_pred):
+
+        # the code here is only executed once, since these should all be graph operations. Do not expect Numpy
+        # calculations or the like to work here, only Keras backend and tensor flow nodes.
+
+        max_pixels = input_shape[0] * input_shape[1]
+
         softmax = tf.nn.softmax(y_pred, dim=2)
 
         # clip
@@ -31,25 +40,39 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 
         pixel_loss = tf.multiply(y_true, neglog_softmax, name="pixel_loss")
 
+        labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
         bkg_frg_areas = tf.reduce_sum(y_true, 1)
         bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
 
-        labels_bkg, labels_frg = tf.split(y_true, 2, 2, name="split_2")
-        w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
+        # The branches here configure the graph differently. You can imagine these branches working as if the path
+        # that was disabled didn't exist at all in the code. Each path should work independently.
+        
+        if USE_W1:
+            w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
+        else:
+            w1_bkg_weights = labels_bkg
 
-        #frg_area_tiled = tf.tile(frg_area, tf.stack([1, 57632]))
-        #inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
-        #w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
-        #w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+        if USE_W2:
+            frg_area_tiled = tf.tile(frg_area, tf.stack([1, max_pixels]))
 
-        #w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
-        weighted_loss = tf.multiply(w1_bkg_weights, pixel_loss, name="weighted_loss")
+            # prevent divide by zero, max is number of pixels
+            frg_area_tiled = K.clip(frg_area_tiled, K.epsilon(), max_pixels)
+            inv_frg_area = tf.div(tf.ones_like(frg_area_tiled), frg_area_tiled)
+
+            w2_weights = tf.scalar_mul(avg_obj_size, inv_frg_area)
+            w2_frg_weights = tf.multiply(labels_frg, tf.expand_dims(w2_weights, axis=2))
+
+        else:
+            w2_frg_weights = labels_frg
+
+        w1_times_w2 = tf.add(w1_bkg_weights, w2_frg_weights, name="w1_times_w2")
+        weighted_loss = tf.multiply(w1_times_w2, pixel_loss, name="weighted_loss")
+        weighted_loss = tf.scalar_mul(loss_scaler, weighted_loss)
 
         loss = tf.reduce_sum(weighted_loss, -1, name="loss")
         #loss = tf.Print(loss, ["loss", tf.shape(loss), loss])
 
-        # XXX temporarily disable custom weighted categorical cross entropy for validation evaluation
-        #loss = K.categorical_crossentropy(softmax, y_true)
+        # loss = K.categorical_crossentropy(softmax, y_true)
 
         return loss
     
@@ -59,7 +82,8 @@ def custom_weighted_cross_entropy(obj_to_bkg_ratio=0.00016, avg_obj_size=1000):
 def build_model(input_shape, num_classes,
                 use_regression=False,
                 obj_to_bkg_ratio=0.00016,
-                avg_obj_size=1000):
+                avg_obj_size=1000,
+                metrics=None):
 
     # set channels last format
     K.set_image_data_format('channels_last')
@@ -104,8 +128,8 @@ def build_model(input_shape, num_classes,
         flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
         model = Model(inputs=inputs, outputs=flatten)
         model.compile(optimizer=Adam(lr=0.001),
-                      loss=custom_weighted_cross_entropy(obj_to_bkg_ratio, avg_obj_size),
-                      metrics=['accuracy'])
+                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
+                      metrics=metrics)
         
     print(model.summary())    
     return model
