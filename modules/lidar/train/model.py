@@ -26,6 +26,9 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
 
     def custom_loss(y_true, y_pred):
 
+        # the code here is only executed once, since these should all be graph operations. Do not expect Numpy
+        # calculations or the like to work here, only Keras backend and tensor flow nodes.
+
         max_pixels = input_shape[0] * input_shape[1]
 
         softmax = tf.nn.softmax(y_pred, dim=2)
@@ -41,6 +44,9 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
         bkg_frg_areas = tf.reduce_sum(y_true, 1)
         bkg_area, frg_area = tf.split(bkg_frg_areas, 2, 1, name="split_1")
 
+        # The branches here configure the graph differently. You can imagine these branches working as if the path
+        # that was disabled didn't exist at all in the code. Each path should work independently.
+        
         if USE_W1:
             w1_bkg_weights = tf.scalar_mul(obj_to_bkg_ratio, labels_bkg)
         else:
