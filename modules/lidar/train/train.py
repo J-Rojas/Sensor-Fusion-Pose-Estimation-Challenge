@@ -30,8 +30,8 @@ def precision(y_true, y_pred):
     how many selected items are relevant.
     """
 
-    y_pred = tf.Print(y_pred, ["preds", y_pred])
-    y_true = tf.Print(y_true, ["labels", y_true])
+    #y_pred = tf.Print(y_pred, ["preds", y_pred])
+    #y_true = tf.Print(y_true, ["labels", y_true])
 
     labels_bkg, labels_frg = tf.split(y_true, 2, 2)
     preds_bkg, preds_frg = tf.split(y_pred, 2, 2)
