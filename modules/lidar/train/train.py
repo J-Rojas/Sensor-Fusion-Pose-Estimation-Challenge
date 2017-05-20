@@ -3,11 +3,12 @@ import os
 import argparse
 import json
 import datetime
+import numpy as np
 import pandas as pd
 import h5py
 from pretrain import calculate_population_weights
 
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 EPOCHS = 100
 IMG_WIDTH = 1801
 IMG_HEIGHT = 32
@@ -20,46 +21,41 @@ import tensorflow as tf
 from model import build_model
 from loader import get_data_and_ground_truth, data_generator, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-#import sklearn.metrics
+from keras import backend as K
+
+def precision(y_true, y_pred):
+    """Precision metric.
+    Only computes a batch-wise average of precision.
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
+
+    #y_pred = tf.Print(y_pred, ["preds", y_pred])
+    #y_true = tf.Print(y_true, ["labels", y_true])
+
+    labels_bkg, labels_frg = tf.split(y_true, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred, 2, 2)
+
+    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
 
 
-class PRMetrics(Callback):
+def recall(y_true, y_pred):
+    """Recall metric.
+    Only computes a batch-wise average of recall.
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
 
-    def __init__(self):
-        self.labels = []
-        self.preds = []
+    labels_bkg, labels_frg = tf.split(y_true, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred, 2, 2)
 
-    def on_epoch_end(self, epoch, logs=None):
-
-        # TODO: produce metric output
-        precision, recall, fbeta_score, support = 0, 0, 0, 0
-
-        print('precision {}, recall {}, f1 {}, support {}'.format(precision, recall, fbeta_score, support))
-
-        # reset data
-        self.labels = []
-        self.preds = []
-
-    def on_batch_begin(self, batch_index, logs=None):
-        pass
-
-    def on_batch_end(self, batch_index, logs=None):
-        pass
-
-    def update(self, labels, preds):
-
-        # this
-        self.labels.append(labels)
-        self.preds.append(preds)
-
-
-def record_labels(callback):
-
-    def precision_recall(y_true, y_pred):
-        callback.update(y_true, y_pred)
-        return tf.zeros_like([1])
-
-    return precision_recall
+    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
 
 
 def main():
@@ -83,8 +79,7 @@ def main():
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
     print("Train statistics: ", population_statistics_train)
 
-    prmetrics = PRMetrics()
-    metrics = ['accuracy', record_labels(prmetrics)]
+    metrics = [recall, precision]
 
     if args.modelFile != "":
         with open(args.modelFile, 'r') as jfile:
@@ -129,7 +124,7 @@ def main():
         ),
         validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
         epochs=EPOCHS,
-        callbacks=[checkpointer, tensorboard, prmetrics],
+        callbacks=[checkpointer, tensorboard],
         verbose=1
     )
     print("stop time:")

@@ -13,20 +13,7 @@ import matplotlib.cm
 import matplotlib.colors
 import matplotlib.image as mpimg
 import pickle
-
-LIDAR_MAX_HEIGHT = 2
-LIDAR_MIN_HEIGHT = -2
-
-RES = (1.33, 0.2) #(vertical, horizontal)
-VFOV = (-30.67, 10.67)
-
-RES_RAD = np.array(RES) * (np.pi/180)
-X_MIN = -360.0 / RES[1] / 2
-Y_MIN = VFOV[0] / RES[0]
-X_MAX = int(360.0 / RES[1])
-Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0])
-
-print(Y_MIN, Y_MAX, RES_RAD)
+import globals
 
 def lidar_2d_front_view(points, res, fov, type, cmap = None):
 
@@ -44,12 +31,12 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None):
     # L2 norm of X,Y dimension (distance from sensor)
     distance = np.sqrt(x ** 2 + y ** 2)
     l2_norm = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-    x_img = np.arctan2(-y, x) / RES_RAD[1]
-    y_img = np.arcsin(z/l2_norm) / RES_RAD[0]
+    x_img = np.arctan2(-y, x) / globals.RES_RAD[1]
+    y_img = np.arcsin(z/l2_norm) / globals.RES_RAD[0]
 
     # shift origin
-    x_img -= X_MIN
-    y_img -= Y_MIN
+    x_img -= globals.X_MIN
+    y_img -= globals.Y_MIN
 
     colormap = matplotlib.cm.ScalarMappable(cmap=cmap) if cmap is not None else None
     min_val = 0
@@ -61,10 +48,10 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None):
         if cmap is not None:
             colormap = matplotlib.cm.ScalarMappable(cmap=cmap,
                                                     norm=matplotlib.colors.Normalize(
-                                                        vmin=LIDAR_MIN_HEIGHT,
-                                                        vmax=LIDAR_MAX_HEIGHT)
+                                                        vmin=globals.LIDAR_MIN_HEIGHT,
+                                                        vmax=globals.LIDAR_MAX_HEIGHT)
                                                     )
-        min_val = LIDAR_MIN_HEIGHT
+        min_val = globals.LIDAR_MIN_HEIGHT
     elif type == 'distance':
         pixel_values = distance
     else:
@@ -72,12 +59,12 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None):
 
     y_img_int = y_img.astype(int)
     x_img_int = x_img.astype(int)
-    img = np.ones((Y_MAX + 1, X_MAX + 1)) * min_val
-    norm = np.ones((Y_MAX + 1, X_MAX + 1)) * 10000
+    img = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1)) * min_val
+    norm = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1)) * 10000
 
     # should only keep point nearest to observer for duplicate x,y values
     for x, y, p, l in zip(x_img_int, y_img_int, pixel_values, l2_norm):
-        y = min(y, Y_MAX)
+        y = min(y, globals.Y_MAX)
         y = max(y, 0)
         if norm[y, x] > l:
             img[y, x] = p
@@ -91,9 +78,9 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None):
 
 
 def generate_lidar_2d_front_view(points, cmap=None):
-    img_intensity, float_intensity = lidar_2d_front_view(points, res=RES, fov=VFOV, type='intensity', cmap=cmap)
-    img_distance, float_distance = lidar_2d_front_view(points, res=RES, fov=VFOV, type='distance', cmap=cmap)
-    img_height, float_height = lidar_2d_front_view(points, res=RES, fov=VFOV, type='height', cmap=cmap)
+    img_intensity, float_intensity = lidar_2d_front_view(points, res=globals.RES, fov=globals.VFOV, type='intensity', cmap=cmap)
+    img_distance, float_distance = lidar_2d_front_view(points, res=globals.RES, fov=globals.VFOV, type='distance', cmap=cmap)
+    img_height, float_height = lidar_2d_front_view(points, res=globals.RES, fov=globals.VFOV, type='height', cmap=cmap)
 
     return {'intensity': img_intensity, 'distance': img_distance, 'height': img_height,
             'intensity_float': float_intensity, 'distance_float': float_distance, 'height_float': float_height}

@@ -9,7 +9,7 @@ import argparse
 import math
 import json
 import cv2
-from process.extract_rosbag_lidar import X_MIN, Y_MIN, Y_MAX, RES_RAD
+from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD
 from keras.utils import to_categorical
 
 
