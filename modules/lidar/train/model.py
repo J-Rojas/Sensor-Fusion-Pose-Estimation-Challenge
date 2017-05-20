@@ -8,14 +8,14 @@ import cv2
 from keras import backend as K
 import tensorflow as tf
 
-from keras.layers import Input, concatenate, Reshape, BatchNormalization, Activation
+from keras.layers import Input, concatenate, Reshape, BatchNormalization, Activation, Lambda
 from keras.layers.convolutional import Conv2D, MaxPooling2D, Conv2DTranspose, ZeroPadding2D, Cropping2D
 from keras.models import Model
 from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
 
 
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 EPOCHS = 10
 
 # Disabling both USE_W1 and USE_W2 should result in typical categorical_cross_entropy loss
@@ -31,11 +31,7 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
 
         max_pixels = input_shape[0] * input_shape[1]
 
-        softmax = tf.nn.softmax(y_pred, dim=2)
-
-        # clip
-        softmax = K.clip(softmax, K.epsilon(), 1)
-        log_softmax = tf.log(softmax, name="logsoftmax")
+        log_softmax = tf.log(y_pred, name="logsoftmax")
         neglog_softmax = tf.scalar_mul(-1., log_softmax)
 
         pixel_loss = tf.multiply(y_true, neglog_softmax, name="pixel_loss")
@@ -89,10 +85,12 @@ def build_model(input_shape, num_classes,
     K.set_image_data_format('channels_last')
 
     inputs = Input(shape=input_shape, name='input')
-    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(inputs)
-    normalized = BatchNormalization(name='normalize')(inputs_padded)
+    flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
+    normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
+    unflatten_input = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
+    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(unflatten_input)
     conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(normalized)
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(conv1)
     conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3',
@@ -126,8 +124,10 @@ def build_model(input_shape, num_classes,
                       metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})
     else:
         flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
-        model = Model(inputs=inputs, outputs=flatten)
-        model.compile(optimizer=Adam(lr=0.001),
+        softmax = Activation('softmax',name='softmax')(flatten)
+        softmax_clipped = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='clip_epsilon')(softmax)
+        model = Model(inputs=inputs, outputs=softmax_clipped)
+        model.compile(optimizer=Adam(lr=0.01),
                       loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
         
