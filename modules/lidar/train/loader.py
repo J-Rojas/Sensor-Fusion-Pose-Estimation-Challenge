@@ -19,15 +19,14 @@ def usage():
     print('Usage: python loader.py --input_csv_file [csv file of data folders]')
 
 
-def data_number_of_batches_per_epoch(obs_centroids, BATCH_SIZE):
-    tx = obs_centroids[0]
-    size = len(tx)
-    return int(size / BATCH_SIZE)
+def data_number_of_batches_per_epoch(data, BATCH_SIZE):
+    size = len(data)
+    return int(size / BATCH_SIZE) + (1 if size % BATCH_SIZE != 0 else 0)
 
 #
 # read in images/ground truths batch by batch
 #
-def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES):
+def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -38,48 +37,83 @@ def data_generator(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, I
     images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
     obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
 
-    batch_index = 0
-    num_batches = data_number_of_batches_per_epoch(obs_centroids, BATCH_SIZE)
-    size = num_batches*BATCH_SIZE
+    num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
 
     while 1:
 
         ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
-        random.shuffle(ziplist)
+        if randomize:
+            random.shuffle(ziplist)
         tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
 
-        for ind in range(size):
+        for batch in range(num_batches):
 
-            fname = pickle_dir_and_prefix[ind]+"_distance_float.lidar.p"
+            load_lidar_data(images, pickle_dir_and_prefix, batch*BATCH_SIZE, BATCH_SIZE)
+            load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh,
+                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES), batch*BATCH_SIZE, BATCH_SIZE)
+
+            yield (images, obj_labels)
+
+
+def data_generator_predict(pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES):
+
+    images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+    num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
+    random.shuffle(pickle_dir_and_prefix)
+
+    while 1:
+
+        for ind in range(num_batches):
+            load_lidar_data(images, pickle_dir_and_prefix, BATCH_SIZE)
+            yield images
+
+
+def load_lidar_data(images, pickle_dir_and_prefix, offset, size):
+
+    batch_index = 0
+
+    for ind in range(offset, offset + size):
+
+        if ind < len(pickle_dir_and_prefix):
+
+            fname = pickle_dir_and_prefix[ind] + "_distance_float.lidar.p"
+
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,:,:,0],img_arr)
+            np.copyto(images[batch_index, :, :, 0], img_arr)
             f.close();
 
-            fname = pickle_dir_and_prefix[ind]+"_height_float.lidar.p"
+            fname = pickle_dir_and_prefix[ind] + "_height_float.lidar.p"
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,:,:,1],img_arr)
+            np.copyto(images[batch_index, :, :, 1], img_arr)
             f.close();
 
-            fname = pickle_dir_and_prefix[ind]+"_intensity_float.lidar.p"
+            fname = pickle_dir_and_prefix[ind] + "_intensity_float.lidar.p"
             f = open(fname, 'rb')
             pickle_data = pickle.load(f)
             img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index,:,:,2],img_arr)
+            np.copyto(images[batch_index, :, :, 2], img_arr)
             f.close()
 
-            label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind],(IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
-            #label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
+        batch_index += 1
+
+
+def load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, offset, size):
+
+    batch_index = 0
+
+    for ind in range(offset, offset + size):
+
+        if ind < len(tx):
+
+            label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape)
+            # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
             np.copyto(obj_labels[batch_index], np.uint8(label))
 
-            batch_index = batch_index + 1
-
-            if (batch_index >= BATCH_SIZE):
-                batch_index = 0
-                yield (images, obj_labels)
+        batch_index += 1
 
 
 #
@@ -109,7 +143,7 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
                 ty = row2['ty']
                 tz = row2['tz']
 
-                pickle_dir_prefix = dirset.dir+"/lidar_360/"+ts
+                pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, ts)
                 pickle_dir_and_prefix.append(pickle_dir_prefix)
                 txl.append(float(tx))
                 tyl.append(float(ty))
@@ -125,6 +159,8 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
     return obs_centroid, pickle_dir_and_prefix, obs_size
 
 
+def file_prefix_for_timestamp(parent_dir, ts):
+    return parent_dir + "/lidar_360/" + ts
 
 # ***** main loop *****
 if __name__ == "__main__":
