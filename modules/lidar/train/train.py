@@ -6,22 +6,16 @@ import datetime
 import numpy as np
 import pandas as pd
 import h5py
+from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
+                    NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT
 from pretrain import calculate_population_weights
-
-BATCH_SIZE = 64
-EPOCHS = 100
-IMG_WIDTH = 1801
-IMG_HEIGHT = 32
-NUM_CHANNELS = 3
-NUM_CLASSES = 2
-K_NEGATIVE_SAMPLE_RATIO_WEIGHT = 4
-INPUT_SHAPE = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
 
 import tensorflow as tf
 from model import build_model
-from loader import get_data_and_ground_truth, data_generator, data_number_of_batches_per_epoch
+from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 from keras import backend as K
+from keras.models import model_from_json
 
 def precision(y_true, y_pred):
     """Precision metric.
@@ -104,21 +98,22 @@ def main():
     val_data = get_data_and_ground_truth(validation_file, dir_prefix)
 
     # number of batches per epoch
-    n_batches_per_epoch_train = data_number_of_batches_per_epoch(train_data[0], BATCH_SIZE)
-    n_batches_per_epoch_val = data_number_of_batches_per_epoch(val_data[0], BATCH_SIZE)
+    n_batches_per_epoch_train = data_number_of_batches_per_epoch(train_data[1], BATCH_SIZE)
+    n_batches_per_epoch_val = data_number_of_batches_per_epoch(val_data[1], BATCH_SIZE)
 
+    print("Number of batches per epoch: {}".format(n_batches_per_epoch_train))
     print("start time:")
     print(datetime.datetime.now())
 
     checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'), verbose=1, save_weights_only=True)
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), write_graph=True, write_images=False)
     model.fit_generator(
-        data_generator(
+        data_generator_train(
             train_data[0], train_data[2], train_data[1],
             BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
         ),  # generator
         n_batches_per_epoch_train,  # number of batches per epoch
-        validation_data=data_generator(
+        validation_data=data_generator_train(
             val_data[0], val_data[2], val_data[1],
             BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
         ),

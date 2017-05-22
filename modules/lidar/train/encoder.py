@@ -119,7 +119,7 @@ def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
     return y
 
 
-def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='circle'):
+def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
     if method == 'circle':
         y = generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE)
     else:

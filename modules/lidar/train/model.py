@@ -7,16 +7,13 @@ from numpy import random
 import cv2
 from keras import backend as K
 import tensorflow as tf
+import globals
 
 from keras.layers import Input, concatenate, Reshape, BatchNormalization, Activation, Lambda
 from keras.layers.convolutional import Conv2D, MaxPooling2D, Conv2DTranspose, ZeroPadding2D, Cropping2D
 from keras.models import Model
 from keras.utils.np_utils import to_categorical
 from keras.optimizers import Adam
-
-
-BATCH_SIZE = 64
-EPOCHS = 10
 
 # Disabling both USE_W1 and USE_W2 should result in typical categorical_cross_entropy loss
 USE_W1 = True
@@ -127,7 +124,7 @@ def build_model(input_shape, num_classes,
         softmax = Activation('softmax',name='softmax')(flatten)
         softmax_clipped = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='clip_epsilon')(softmax)
         model = Model(inputs=inputs, outputs=softmax_clipped)
-        model.compile(optimizer=Adam(lr=0.01),
+        model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
                       loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
         
@@ -149,7 +146,7 @@ def test(model):
     label = np.ones((93, 1029))
     label[27:, 621:826] = 0  #bounding box of the obstacle vehicle
     y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
-    model.fit(np.asarray([x]), np.asarray([y]), batch_size=BATCH_SIZE, epochs=EPOCHS, verbose=1)
+    model.fit(np.asarray([x]), np.asarray([y]), batch_size=globals.BATCH_SIZE, epochs=globals.EPOCHS, verbose=1)
 
 
 def main():
