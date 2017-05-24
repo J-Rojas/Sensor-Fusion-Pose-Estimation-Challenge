@@ -1,0 +1,5 @@
+<launch>
+	<param name="use_sim_time" type="bool" value="true"/>
+	
+	<node name="didi_rviz" pkg="rviz" type="rviz" args="-d $(find team_sf_rosnode)/launch/display.rviz"/>
+</launch>
