@@ -26,7 +26,7 @@ apt-get update && sudo apt-get upgrade && rosdep update
 
 Add the package into your env
 ```
-export ROS_PACKAGE_PATH=/media/psf/Home/Documents/DiDi_Docker/team_sf_rosnode:$ROS_PACKAGE_PATH
+export ROS_PACKAGE_PATH=<Path to team_sf_rosnode folder>:$ROS_PACKAGE_PATH
 ```
 
 Launch the visualiver:
