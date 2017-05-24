@@ -5,9 +5,6 @@ import json
 import datetime
 import numpy as np
 import cv2
-import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE
 from loader import get_data_and_ground_truth, data_number_of_batches_per_epoch, data_generator_train
