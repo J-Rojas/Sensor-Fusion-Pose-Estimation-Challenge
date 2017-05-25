@@ -24,6 +24,11 @@ apt-get install ros-$ROS_DISTRO-velodyne
 apt-get update && sudo apt-get upgrade && rosdep update
 ```
 
+Make the node executable
+```
+chmod +x <Path to team_sf_rosnode folder>/scripts/lidar_predict.py
+```
+
 Add the package into your env
 ```
 export ROS_PACKAGE_PATH=<Path to team_sf_rosnode folder>:$ROS_PACKAGE_PATH
