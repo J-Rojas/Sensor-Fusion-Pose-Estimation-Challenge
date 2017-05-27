@@ -5,9 +5,14 @@ import json
 import datetime
 import numpy as np
 import cv2
+import math
+import csv
+
+sys.path.append('../')
+from process.globals import X_MIN, Y_MIN, RES, RES_RAD
 from scipy.ndimage.measurements import label
-from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE
-from loader import get_data_and_ground_truth, data_number_of_batches_per_epoch, data_generator_train
+from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
+from loader import get_data_and_ground_truth, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 from model import build_model
 
 from keras.models import model_from_json
@@ -37,6 +42,7 @@ def find_obstacle(y_pred, input_shape):
     # Apply threshold to help remove false positives
     heatmap[heatmap <= MIN_HEAT] = 0
     labels = label(heatmap)    
+    #print(labels)
 
     # Iterate through all detected clusters
     max_area = 0
@@ -64,13 +70,53 @@ def find_obstacle(y_pred, input_shape):
     centroid_y = int((largest_bbox[0][1] + largest_bbox[1][1]) / 2.0)
     
     return (centroid_x, centroid_y), largest_bbox, max_area
+
+#
+# take in find_obstacle() batch output (centroid x/theata,y/phi) and batch input(distance map) 
+# and back project 2D centroid to 3D centroid(x,y,z)
+#
+def back_project_2D_2_3D(centroids, bounding_boxes, distance_data, height_data):
     
+    xyz_coor = np.zeros((centroids.shape[0],3))
+    
+    for i in range(centroids.shape[0]):
+
+        distance = distance_data[i, int(centroids[i,1]), int(centroids[i,0])]
+        height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
+        theata = (centroids[i,0] + X_MIN) * RES_RAD[1]
+
+        phi_ind = centroids[i,1]
+        
+        xyz_coor[i,0] = distance * math.cos(theata)
+        xyz_coor[i,1] = - distance * math.sin(theata)
+        xyz_coor[i,2] = height
+
+        print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
+              format(centroids[i], height, theata,
+                     xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
+
+    return xyz_coor
+
+
+def write_prediction_data_to_csv(centroids, output_file):
+
+    csv_file = open(output_file, 'w')
+    writer = csv.DictWriter(csv_file, ['tx', 'ty', 'tz'])
+
+    writer.writeheader()
+
+    for centroid in centroids:
+        writer.writerow({'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
     parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
     parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction")
+    parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
-    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction image')
+    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
+    parser.set_defaults(export=False)
 
     args = parser.parse_args()
     output_dir = args.output_dir
@@ -87,8 +133,10 @@ def main():
 
     # load data
     predict_data = get_data_and_ground_truth(predict_file, dir_prefix)
-    n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
 
+    n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
+    
+    # get some data
     predictions = model.predict_generator(
         data_generator_train(
             predict_data[0], predict_data[2], predict_data[1],
@@ -98,6 +146,21 @@ def main():
         n_batches_per_epoch,
         verbose=0
     )
+    
+
+    #print predict_data[0]
+    # reload data as one big batch
+    all_data_loader = data_generator_train(predict_data[0], predict_data[2], predict_data[1],
+            len(predict_data[1]), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+            randomize=False)
+    all_images, all_labels = all_data_loader.next()
+    
+
+    bounding_boxes = np.zeros((all_images.shape[0],4))
+    centroids = np.zeros((all_images.shape[0],2))
+    print all_images.shape
+    ind = 0
+
 
     # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
     for prediction, file_prefix in zip(predictions, predict_data[1]):
@@ -116,19 +179,47 @@ def main():
                              
         centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE)       
 
+        
         if centroid is not None:
             cv2.rectangle(image, bbox[0], bbox[1], (0, 0, 255), 2)            
-            #print('{} -- centroid found: ({}, {}), area={}'.format(file_prefix, centroid[0], centroid[1], bbox_area))          
+            #print('{} -- centroid found: ({}, {}), area={}'.format(file_prefix, centroid[0], centroid[1], bbox_area))  
+            centroids[ind][0] = centroid[0]
+            centroids[ind][1] = centroid[1]
+            bounding_boxes[ind,0] = bbox[0][0]
+            bounding_boxes[ind,1] = bbox[0][1]
+            bounding_boxes[ind,2] = bbox[1][0]
+            bounding_boxes[ind,3] = bbox[1][1]               
         else:
             print('{} -- centroid not found'.format(file_prefix))
-            
-        if output_dir is not None:
-            file_prefix = output_dir + "/" + os.path.basename(file_prefix)
-        else:
-            file_prefix = os.path.dirname(file_prefix) + "/lidar_predictions/" + os.path.basename(file_prefix)
+            centroids[ind][0] = 0
+            centroids[ind][1] = 0
+            bounding_boxes[ind,0] = 0
+            bounding_boxes[ind,1] = 0
+            bounding_boxes[ind,2] = 0
+            bounding_boxes[ind,3] = 0               
 
-        cv2.imwrite(file_prefix + "_class.png", image)
+        ind += 1
+
+        if args.export:
+
+            if output_dir is not None:
+                file_prefix = output_dir + "/lidar_predictions/" + os.path.basename(file_prefix)
+            else:
+                file_prefix = os.path.dirname(file_prefix) + "/lidar_predictions/" + os.path.basename(file_prefix)
+
+            if not(os.path.isdir(os.path.dirname(file_prefix))):
+                os.mkdir(os.path.dirname(file_prefix))
+
+            cv2.imwrite(file_prefix + "_class.png", image)
         
+    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
+
+    if output_dir is not None:
+        file_prefix = output_dir + "/"
+
+        write_prediction_data_to_csv(xyz_pred, file_prefix + PREDICTION_FILE_NAME)
+
+
         
 if __name__ == '__main__':
     main()
