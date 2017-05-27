@@ -6,11 +6,12 @@ import datetime
 import numpy as np
 import cv2
 import math
+import csv
 
 sys.path.append('../')
-from process.globals import X_MIN, Y_MIN, RES
+from process.globals import X_MIN, Y_MIN, RES, RES_RAD
 from scipy.ndimage.measurements import label
-from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE
+from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
 from loader import get_data_and_ground_truth, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 from model import build_model
 
@@ -79,22 +80,43 @@ def back_project_2D_2_3D(centroids, bounding_boxes, distance_data, height_data):
     xyz_coor = np.zeros((centroids.shape[0],3))
     
     for i in range(centroids.shape[0]):
+
         distance = distance_data[i, int(centroids[i,1]), int(centroids[i,0])]
         height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
-        theata = centroids[i,0]
+        theata = (centroids[i,0] + X_MIN) * RES_RAD[1]
+
         phi_ind = centroids[i,1]
         
-        xyz_coor[i,0] = distance*math.sin(theata)
-        xyz_coor[i,1] = distance*math.cos(theata)    
+        xyz_coor[i,0] = distance * math.sin(theata)
+        xyz_coor[i,1] = - distance * math.cos(theata)
         xyz_coor[i,2] = height
 
-    
+        print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
+              format(centroids[i], height, theata,
+                     xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
+
+    return xyz_coor
+
+
+def write_prediction_data_to_csv(centroids, output_file):
+
+    csv_file = open(output_file, 'w')
+    writer = csv.DictWriter(csv_file, ['tx', 'ty', 'tz'])
+
+    writer.writeheader()
+
+    for centroid in centroids:
+        writer.writerow({'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
+
+
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
     parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
     parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction")
+    parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
-    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction image')
+    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
+    parser.set_defaults(export=False)
 
     args = parser.parse_args()
     output_dir = args.output_dir
@@ -150,7 +172,7 @@ def main():
     print all_images.shape
     ind = 0
 
-    
+
     # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
     for prediction, file_prefix in zip(predictions, predict_data[1]):
         classes = prediction[:, 1]
@@ -187,17 +209,28 @@ def main():
             bounding_boxes[ind,2] = 0
             bounding_boxes[ind,3] = 0               
 
+        ind += 1
 
-        ind += 1   
-            
-        if output_dir is not None:
-            file_prefix = output_dir + "/" + os.path.basename(file_prefix)
-        else:
-            file_prefix = os.path.dirname(file_prefix) + "/lidar_predictions/" + os.path.basename(file_prefix)
+        if args.export:
 
-        cv2.imwrite(file_prefix + "_class.png", image)
+            if output_dir is not None:
+                file_prefix = output_dir + "/lidar_predictions/" + os.path.basename(file_prefix)
+            else:
+                file_prefix = os.path.dirname(file_prefix) + "/lidar_predictions/" + os.path.basename(file_prefix)
+
+            if not(os.path.isdir(os.path.dirname(file_prefix))):
+                os.mkdir(os.path.dirname(file_prefix))
+
+            cv2.imwrite(file_prefix + "_class.png", image)
         
-    back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])       
+    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
+
+    if output_dir is not None:
+        file_prefix = output_dir + "/"
+
+        write_prediction_data_to_csv(xyz_pred, file_prefix + PREDICTION_FILE_NAME)
+
+
         
 if __name__ == '__main__':
     main()
