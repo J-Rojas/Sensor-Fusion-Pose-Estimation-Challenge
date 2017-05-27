@@ -87,8 +87,8 @@ def back_project_2D_2_3D(centroids, bounding_boxes, distance_data, height_data):
 
         phi_ind = centroids[i,1]
         
-        xyz_coor[i,0] = distance * math.sin(theata)
-        xyz_coor[i,1] = - distance * math.cos(theata)
+        xyz_coor[i,0] = distance * math.cos(theata)
+        xyz_coor[i,1] = - distance * math.sin(theata)
         xyz_coor[i,2] = height
 
         print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
@@ -128,24 +128,13 @@ def main():
         NUM_CLASSES,
     )
 
-    #print("reading existing weights")
-    #model.load_weights(args.weightsFile)
+    print("reading existing weights")
+    model.load_weights(args.weightsFile)
 
     # load data
     predict_data = get_data_and_ground_truth(predict_file, dir_prefix)
-    
+
     n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
-    
-    # get some model first
-    model.fit_generator(
-        data_generator_train(
-            predict_data[0], predict_data[2], predict_data[1],
-            BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
-        ),  # generator
-        n_batches_per_epoch,  # number of batches per epoch
-        epochs=1,
-        verbose=1
-    )
     
     # get some data
     predictions = model.predict_generator(
