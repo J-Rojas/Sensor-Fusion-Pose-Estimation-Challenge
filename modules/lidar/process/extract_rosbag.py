@@ -7,7 +7,7 @@ import rosbag
 import os
 import matplotlib.image as mpimg
 import sensor_msgs.point_cloud2
-import pickle
+import csv
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
@@ -34,6 +34,8 @@ class ROSBagExtractor:
         self.topdown_max_range = topdown_max_range
         self.display=display
         self.pickle=pickle
+        self.lidar_timestamps=[]
+        self.camera_timestamps = []
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -107,6 +109,8 @@ class ROSBagExtractor:
 
         if msg_type in ['sensor_msgs/Image']:
 
+            self.camera_timestamps.append(timestamp.to_nsec())
+
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
             if self.display:
@@ -125,6 +129,8 @@ class ROSBagExtractor:
             #    self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
+
+            self.lidar_timestamps.append(timestamp.to_nsec())
 
             points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
             points = np.array(list(points))
@@ -176,6 +182,16 @@ class ROSBagExtractor:
                 i.blit(0, 0, width=size[0], height=size[1])
                 w.flip()
 
+def write_timestamps_to_csv(timestamps, output_file):
+
+    csv_file = open(output_file, 'w')
+    writer = csv.DictWriter(csv_file, ['timestamp'])
+
+    writer.writeheader()
+
+    for ts in timestamps:
+        writer.writerow({'timestamp': ts})
+
 
 def main():
 
@@ -192,7 +208,8 @@ def main():
     parser.add_argument('--pickle', dest='pickle', default=None, action='store_true', help='Export pickle files')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
-    parser.set_defaults(quiet=False, display=False)
+    parser.add_argument('--interpolate', dest='interpolate', action='store_true', help='Generate Lidar interpolation')
+    parser.set_defaults(quiet=False, display=False, interpolate=False)
 
     args = parser.parse_args()
 
@@ -250,8 +267,13 @@ def main():
                 if args.display or output_dir:
                     extractor.handle_msg(msgType, topic, msg, t, result)
 
+    # export timestamps
+    write_timestamps_to_csv(extractor.lidar_timestamps, output_dir + '/lidar_timestamps.csv')
+    write_timestamps_to_csv(extractor.camera_timestamps, output_dir + '/camera_timestamps.csv')
+
     # generate lidar interpolation
-    interpolate_lidar_with_rtk(args.bag_file, args.metadata, output_dir)
+    if args.interpolate:
+        interpolate_lidar_with_rtk(args.bag_file, args.metadata, output_dir)
 
     #Load pickle:
     #input

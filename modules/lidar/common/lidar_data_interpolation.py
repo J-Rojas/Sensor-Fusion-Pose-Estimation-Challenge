@@ -132,7 +132,7 @@ def interpolate_lidar_with_rtk(bag_filename, metadata_filename, outdir):
         obs_poses_interp_transform_dict["rz"].append(item["rz"])
 
     
-    obs_poses_interp_transform_cols = ['timestamp', 'tz', 'tx', 'ty', 'rx', 'ry', 'rz']
+    obs_poses_interp_transform_cols = ['timestamp', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz']
     obs_poses_interp_transform_df = pd.DataFrame(data=obs_poses_interp_transform_dict, columns=obs_poses_interp_transform_cols)
     obs_poses_interp_transform_df.to_csv(os.path.join(outdir, 'obs_poses_interp_transform.csv'), index=False) 
         
