@@ -12,7 +12,7 @@ sys.path.append('../')
 from process.globals import X_MIN, Y_MIN, RES, RES_RAD
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
-from loader import get_data_and_ground_truth, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
+from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 from model import build_model
 
 from keras.models import model_from_json
@@ -85,28 +85,31 @@ def back_project_2D_2_3D(centroids, bounding_boxes, distance_data, height_data):
         height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
         theata = (centroids[i,0] + X_MIN) * RES_RAD[1]
 
+        # increase distance to approximate centroid - not surface of car
+        distance += 0.75
+
         phi_ind = centroids[i,1]
         
         xyz_coor[i,0] = distance * math.cos(theata)
         xyz_coor[i,1] = - distance * math.sin(theata)
         xyz_coor[i,2] = height
 
-        print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
-              format(centroids[i], height, theata,
-                     xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
+        # print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
+        #      format(centroids[i], height, theata,
+        #             xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
 
     return xyz_coor
 
 
-def write_prediction_data_to_csv(centroids, output_file):
+def write_prediction_data_to_csv(centroids, timestamps, output_file):
 
     csv_file = open(output_file, 'w')
-    writer = csv.DictWriter(csv_file, ['tx', 'ty', 'tz'])
+    writer = csv.DictWriter(csv_file, ['timestamp', 'tx', 'ty', 'tz'])
 
     writer.writeheader()
 
-    for centroid in centroids:
-        writer.writerow({'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
+    for centroid, ts in zip(centroids, timestamps):
+        writer.writerow({'timestamp': ts, 'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
 
 
 def main():
@@ -132,7 +135,7 @@ def main():
     model.load_weights(args.weightsFile)
 
     # load data
-    predict_data = get_data_and_ground_truth(predict_file, dir_prefix)
+    predict_data = get_data(predict_file, dir_prefix)
 
     n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
     
@@ -158,6 +161,7 @@ def main():
 
     bounding_boxes = np.zeros((all_images.shape[0],4))
     centroids = np.zeros((all_images.shape[0],2))
+    timestamps = []
     print all_images.shape
     ind = 0
 
@@ -179,6 +183,9 @@ def main():
                              
         centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE)       
 
+        timestamps.append(os.path.basename(file_prefix).split('_')[0])
+
+        print(timestamps[ind])
         
         if centroid is not None:
             cv2.rectangle(image, bbox[0], bbox[1], (0, 0, 255), 2)            
@@ -205,7 +212,7 @@ def main():
             if output_dir is not None:
                 file_prefix = output_dir + "/lidar_predictions/" + os.path.basename(file_prefix)
             else:
-                file_prefix = os.path.dirname(file_prefix) + "/lidar_predictions/" + os.path.basename(file_prefix)
+                file_prefix = os.path.dirname(file_prefix).replace('/lidar_360/', '') + "/lidar_predictions/" + os.path.basename(file_prefix)
 
             if not(os.path.isdir(os.path.dirname(file_prefix))):
                 os.mkdir(os.path.dirname(file_prefix))
@@ -216,8 +223,7 @@ def main():
 
     if output_dir is not None:
         file_prefix = output_dir + "/"
-
-        write_prediction_data_to_csv(xyz_pred, file_prefix + PREDICTION_FILE_NAME)
+        write_prediction_data_to_csv(xyz_pred, timestamps, file_prefix + PREDICTION_FILE_NAME)
 
 
         

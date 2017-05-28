@@ -1,5 +1,6 @@
 import sys
 sys.path.append('../')
+import os
 import numpy as np
 import glob
 import argparse
@@ -116,6 +117,42 @@ def load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, offset, siz
         batch_index += 1
 
 
+def get_data(csv_sources, parent_dir):
+    txl = []
+    tyl = []
+    tzl = []
+    obsl = []
+    obsw = []
+    obsh = []
+
+    pickle_dir_and_prefix = []
+
+    def process(dirset):
+
+        # load timestamps
+        lidar_timestamps = dirset.dir + "/lidar_timestamps.csv"
+
+        with open(lidar_timestamps) as csvfile:
+            readCSV = csv.DictReader(csvfile, delimiter=',')
+
+            for row in readCSV:
+
+                ts = row['timestamp']
+
+                pickle_dir_and_prefix.append(file_prefix_for_timestamp(dirset.dir, ts))
+                txl.append(1.0)
+                tyl.append(1.0)
+                tzl.append(1.0)
+                obsl.append(1.0)
+                obsw.append(1.0)
+                obsh.append(1.0)
+
+    foreach_dirset(csv_sources, parent_dir, process)
+
+    obs_centroid = [txl, tyl, tzl]
+    obs_size = [obsl, obsw, obsh]
+    return obs_centroid, pickle_dir_and_prefix, obs_size
+
 #
 # read input csv file to get the list of directories
 #
@@ -159,8 +196,8 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
     return obs_centroid, pickle_dir_and_prefix, obs_size
 
 
-def file_prefix_for_timestamp(parent_dir, ts):
-    return parent_dir + "/lidar_360/" + ts
+def file_prefix_for_timestamp(parent_dir, ts=None):
+    return parent_dir + "/lidar_360/" + (ts if ts is not None else '')
 
 # ***** main loop *****
 if __name__ == "__main__":
