@@ -7,6 +7,8 @@ import numpy as np
 import cv2
 import math
 import csv
+import rosbag
+import sensor_msgs.point_cloud2
 
 sys.path.append('../')
 from process.globals import X_MIN, Y_MIN, RES, RES_RAD
@@ -14,6 +16,7 @@ from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 from model import build_model
+from process.extract_rosbag_lidar import generate_lidar_2d_front_view
 
 from keras.models import model_from_json
 
@@ -75,7 +78,7 @@ def find_obstacle(y_pred, input_shape):
 # take in find_obstacle() batch output (centroid x/theata,y/phi) and batch input(distance map) 
 # and back project 2D centroid to 3D centroid(x,y,z)
 #
-def back_project_2D_2_3D(centroids, bounding_boxes, distance_data, height_data):
+def back_project_2D_2_3D(centroids, distance_data, height_data):
     
     xyz_coor = np.zeros((centroids.shape[0],3))
     
@@ -111,29 +114,57 @@ def write_prediction_data_to_csv(centroids, timestamps, output_file):
     for centroid, ts in zip(centroids, timestamps):
         writer.writerow({'timestamp': ts, 'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
 
-
-def main():
-    parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
-    parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
-    parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction")
-    parser.add_argument('--export', dest='export', action='store_true', help='Export images')
-    parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
-    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
-    parser.set_defaults(export=False)
-
-    args = parser.parse_args()
-    output_dir = args.output_dir
-    predict_file = args.predict_file
-    dir_prefix = args.dir_prefix
-
+def load_model(weightsFile):
     model = build_model(
         INPUT_SHAPE,
         NUM_CLASSES,
     )
 
     print("reading existing weights")
-    model.load_weights(args.weightsFile)
+    model.load_weights(weightsFile)
+    
+    return model
+    
+# return prection from a numpy array of point cloud        
+def predict_point_cloud(model, points, cmap='jet'):
+    points_2d = generate_lidar_2d_front_view(points, cmap=cmap)    
+            
+    input = np.ndarray(shape=(IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+    input[:,:,0] = points_2d['distance_float']
+    input[:,:,1] = points_2d['height_float']
+    input[:,:,2] = points_2d['intensity_float']    
+     
+    prediction = model.predict(np.asarray([input]))    
+    centroid, _, _ = find_obstacle(prediction[0], INPUT_SHAPE)
+    if centroid is None:
+        centroid = (0, 0)
+        
+    centroids = np.array(centroid).reshape(1, 2)
+    distance_data = np.array(points_2d['distance_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
+    height_data = np.array(points_2d['height_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
+    centroid_3d = back_project_2D_2_3D(centroids, distance_data, height_data)[0]
+    #print('predicted centroid: {}'.format(centroid_3d))
+    
+    return centroid_3d
 
+# return predictions from rosbag
+def predict_rosbag(model, predict_file):
+    bag = rosbag.Bag(predict_file, "r")        
+    xyz_pred = []
+    timestamps = []
+    
+    for topic, msg, t in bag.read_messages(topics=['/velodyne_points']):
+        points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
+        points = np.array(list(points))
+                
+        pred = predict_point_cloud(model, points)
+        xyz_pred.append(pred)
+        timestamps.append(t)
+    
+    return xyz_pred, timestamps       
+  
+# return predictions from lidar 2d frontviews  
+def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir):        
     # load data
     predict_data = get_data(predict_file, dir_prefix)
 
@@ -219,12 +250,43 @@ def main():
 
             cv2.imwrite(file_prefix + "_class.png", image)
         
-    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
+    xyz_pred = back_project_2D_2_3D(centroids, all_images[:,:,:,0], all_images[:,:,:,1])
+    
+    return xyz_pred, timestamps
+        
+def main():
+    parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
+    parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
+    parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction or rosbag file name")
+    parser.add_argument('--data_type', type=str, default="frontview", help='Data source for prediction: frontview, or rosbag')    
+    parser.add_argument('--export', dest='export', action='store_true', help='Export images')
+    parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
+    parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
+    parser.set_defaults(export=False)
 
+    args = parser.parse_args()
+    output_dir = args.output_dir
+    data_type = args.data_type
+    predict_file = args.predict_file
+    dir_prefix = args.dir_prefix
+    
+    if data_type is None or not data_type == 'rosbag':
+        data_type = 'frontview'
+    print('predicting from ' + data_type)    
+    
+    # load model with weights
+    model = load_model(args.weightsFile)    
+        
+    if data_type == 'frontview':
+        xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir)        
+    else:
+        xyz_pred, timestamps = predict_rosbag(model, predict_file)        
+        
     if output_dir is not None:
         file_prefix = output_dir + "/"
-        write_prediction_data_to_csv(xyz_pred, timestamps, file_prefix + PREDICTION_FILE_NAME)
 
+        write_prediction_data_to_csv(xyz_pred, timestamps, file_prefix + PREDICTION_FILE_NAME)
+        print('prediction result written to ' + file_prefix + PREDICTION_FILE_NAME)    
 
         
 if __name__ == '__main__':
