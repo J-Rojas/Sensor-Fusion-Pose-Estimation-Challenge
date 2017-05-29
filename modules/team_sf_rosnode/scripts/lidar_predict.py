@@ -49,6 +49,9 @@ def lidar_cloud_to_numpy(msg):
     points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
     points = np.array(list(points))
     #print(points)
+    global lidar_pipeline
+    if lidar_pipeline is None:
+        lidar_pipeline = LIDARPipeline(args.weightsFile)
     position = lidar_pipeline.predict_position(points)
     add_frame(position)
     publish()
@@ -70,7 +73,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    lidar_pipeline = LIDARPipeline(args.weightsFile)
     rospy.init_node('base_link_lidar_predict')
     rospy.Subscriber('/velodyne_points', PointCloud2, lidar_callback, "")
     rospy.spin()
