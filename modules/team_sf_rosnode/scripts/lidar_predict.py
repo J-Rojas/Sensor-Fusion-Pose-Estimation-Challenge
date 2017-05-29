@@ -5,6 +5,9 @@ import numpy as np
 import argparse
 import rospy
 import tf
+import cProfile
+import StringIO
+import pstats
 import sensor_msgs.point_cloud2
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker
@@ -13,6 +16,10 @@ from lidar_module.pipeline import LIDARPipeline
 frame_id = "lidar_pred_center"
 
 lidar_pipeline = None
+
+ENABLE_PROFILING = False
+
+pr = cProfile.Profile() if ENABLE_PROFILING else None
 
 def fake_model(points):
     return np.average(points, axis=1)
@@ -45,6 +52,8 @@ def publish():
 
 # render the tx, ty, tz out of the lidar cloud
 def lidar_cloud_to_numpy(msg):
+    if ENABLE_PROFILING:
+        pr.enable()
     assert isinstance(msg, PointCloud2)
     points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
     points = np.array(list(points))
@@ -53,6 +62,9 @@ def lidar_cloud_to_numpy(msg):
     if lidar_pipeline is None:
         lidar_pipeline = LIDARPipeline(args.weightsFile)
     position = lidar_pipeline.predict_position(points)
+    if ENABLE_PROFILING:
+        pr.disable()
+
     add_frame(position)
     publish()
 
@@ -60,6 +72,14 @@ def lidar_cloud_to_numpy(msg):
 def lidar_callback(msg, who):
     assert isinstance(msg, PointCloud2)
     lidar_cloud_to_numpy(msg)
+
+def print_stats():
+    if ENABLE_PROFILING:
+        s = StringIO.StringIO()
+        sortby = 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print s.getvalue()
 
 
 if __name__ == '__main__':
@@ -74,5 +94,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     rospy.init_node('base_link_lidar_predict')
+    rospy.on_shutdown(print_stats)
     rospy.Subscriber('/velodyne_points', PointCloud2, lidar_callback, "")
     rospy.spin()
