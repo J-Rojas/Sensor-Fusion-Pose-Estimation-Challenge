@@ -29,6 +29,11 @@ Make the node executable
 chmod +x <Path to team_sf_rosnode folder>/scripts/lidar_predict.py
 ```
 
+Setup your python path
+```
+env PYTHON_PATH=$PYTHON_PATH:<Absolute Path to team_sf_rosnode folder>/scripts/lidar_module
+```
+
 Add the package into your env
 ```
 export ROS_PACKAGE_PATH=<Path to team_sf_rosnode folder>:$ROS_PACKAGE_PATH
@@ -40,6 +45,6 @@ roslaunch team_sf_rosnode visualize.launch
 ```
 
 Visualiz a bag file:
-```
-roslaunch team_sf_rosnode lidar_predict.launch bag:=<BAG_PATH>
+``` 
+roslaunch team_sf_rosnode lidar_predict.launch bag:=<BAG_PATH> weightsFile:=<WEIGHT_FILE_PATH>
 ```
