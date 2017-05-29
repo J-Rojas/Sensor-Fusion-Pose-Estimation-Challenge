@@ -31,7 +31,7 @@ chmod +x <Path to team_sf_rosnode folder>/scripts/lidar_predict.py
 
 Setup your python path
 ```
-export PYTHON_PATH=$PYTHON_PATH:<Absolute Path to team_sf_rosnode folder>/scripts/lidar_module
+export PYTHONPATH=$PYTHONPATH:<Absolute Path to team_sf_rosnode folder>/scripts/lidar_module
 ```
 
 Add the package into your env
