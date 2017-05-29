@@ -24,29 +24,21 @@ invariant_height_array = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1),dtype=bo
 distance_reference = {}
 invariant_distance_array = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1),dtype=bool)
 
-invariant_reference = {}
 
-#Initilizing reference array and mask array. This method shall be called at frame 1
+#Initializing reference array. This method shall be called at frame 1
 def initialize_invariant_pixels_new(float_pixels,type):
     global intensity_reference, height_reference, distance_reference,invariant_reference
-    global invariant_intensity_array, invariant_height_array, invariant_distance_array
 
     if type == "distance":
         intensity_reference = float_pixels
-        mask_array = invariant_intensity_array
     elif type == "height":
         height_reference = float_pixels
-        mask_array = invariant_height_array
     elif type == "intensity":
         distance_reference = float_pixels
-        mask_array = invariant_distance_array
     else:
         print "invalid type"
         return
-    #initializing
-    for x in range(32):
-        for y in range(1801):
-            mask_array[x,y] = True
+    
 #updating the mask. Shall be called for each frame
 def update_invariant_pixels_new(float_pixels,type):
     global intensity_reference, height_reference, distance_reference
@@ -64,14 +56,12 @@ def update_invariant_pixels_new(float_pixels,type):
     else:
         print "invalid type"
         return
-    for x in range(32):
-        for y in range(1801):
-            if invariant_reference[x,y] != float_pixels[x,y]:
-                mask_array[x, y] = False
 
+    diff_bool_array = invariant_reference == float_pixels
+    np.logical_and(mask_array, diff_bool_array,mask_array)
 
 def main():
-    """Extract velodyne points and project to 2D images from a ROS bag
+    """Extract velodyne points and create lidar invariant mask from a ROS bags
     """
     parser = argparse.ArgumentParser(description="Extract velodyne points and project to 2D images from a ROS bag.")
     parser.add_argument("input_dir", help="Input ROS bag directory.")
@@ -99,7 +89,6 @@ def main():
             print("Extract velodyne_points from {} into {}".format(bag_file, args.output_dir))
 
             bag = rosbag.Bag(bag_file, "r")
-            result = {'intensity': {}, 'distance': {}, 'height': {}}
             print "Finding the pixels for mask"
             for topic, msg, t in bag.read_messages(topics=['/velodyne_points']):
                 points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
@@ -119,15 +108,6 @@ def main():
                 #break
             bag.close()
 
-    '''import csv
-    w_i = csv.writer(open("../../output/invariant_intensity.csv", "w"))
-    w_d = csv.writer(open("../../output/invariant_distance.csv", "w"))
-    w_h = csv.writer(open("../../output/invariant_height.csv", "w"))
-    for x in range(32):
-        for y in range(1801):
-            w_i.writerow([x, y,invariant_intensity_array[x,y]])
-            w_d.writerow([x, y, invariant_distance_array[x, y]])
-            w_h.writerow([x, y, invariant_height_array[x, y]])'''
 
     f = open(output_dir + '/invariant_intensity.p', 'wb')
     pickle.dump(invariant_intensity_array, f)
