@@ -10,6 +10,7 @@ import csv
 import rosbag
 import sensor_msgs.point_cloud2
 
+print(sys.path)
 sys.path.append('../')
 from process.globals import X_MIN, Y_MIN, RES, RES_RAD
 from scipy.ndimage.measurements import label
@@ -132,9 +133,13 @@ def predict_point_cloud(model, points, cmap='jet'):
     input = np.ndarray(shape=(IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
     input[:,:,0] = points_2d['distance_float']
     input[:,:,1] = points_2d['height_float']
-    input[:,:,2] = points_2d['intensity_float']    
-     
-    prediction = model.predict(np.asarray([input]))    
+    input[:,:,2] = points_2d['intensity_float']
+
+    model_input = np.asarray([input])
+
+    print(model_input.shape)
+
+    prediction = model.predict(model_input)
     centroid, _, _ = find_obstacle(prediction[0], INPUT_SHAPE)
     if centroid is None:
         centroid = (0, 0)
@@ -216,8 +221,6 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
 
         timestamps.append(os.path.basename(file_prefix).split('_')[0])
 
-        print(timestamps[ind])
-        
         if centroid is not None:
             cv2.rectangle(image, bbox[0], bbox[1], (0, 0, 255), 2)            
             #print('{} -- centroid found: ({}, {}), area={}'.format(file_prefix, centroid[0], centroid[1], bbox_area))  
@@ -238,7 +241,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
 
         ind += 1
 
-        if args.export:
+        if export:
 
             if output_dir is not None:
                 file_prefix = output_dir + "/lidar_predictions/" + os.path.basename(file_prefix)
@@ -280,8 +283,8 @@ def main():
     if data_type == 'frontview':
         xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir)        
     else:
-        xyz_pred, timestamps = predict_rosbag(model, predict_file)        
-        
+        xyz_pred, timestamps = predict_rosbag(model, predict_file)
+
     if output_dir is not None:
         file_prefix = output_dir + "/"
 
