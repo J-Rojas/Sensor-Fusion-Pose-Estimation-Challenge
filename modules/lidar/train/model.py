@@ -76,7 +76,8 @@ def build_model(input_shape, num_classes,
                 use_regression=False,
                 obj_to_bkg_ratio=0.00016,
                 avg_obj_size=1000,
-                metrics=None):
+                metrics=None,
+                trainable=True):
 
     # set channels last format
     K.set_image_data_format('channels_last')
@@ -116,6 +117,7 @@ def build_model(input_shape, num_classes,
 
         # TODO: the output layer may need reshaping
         model = Model(inputs=inputs, outputs=[deconv6a, deconv6b])
+        model.trainable = trainable
         model.compile(optimizer=Adam(lr=0.001), 
                       loss={'deconv6a': 'categorical_crossentropy', 'deconv6b': 'mse'}, 
                       metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})

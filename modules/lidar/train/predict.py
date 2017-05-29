@@ -119,6 +119,7 @@ def load_model(weightsFile):
     model = build_model(
         INPUT_SHAPE,
         NUM_CLASSES,
+        trainable=False
     )
 
     print("reading existing weights")
@@ -127,7 +128,7 @@ def load_model(weightsFile):
     return model
     
 # return prection from a numpy array of point cloud        
-def predict_point_cloud(model, points, cmap='jet'):
+def predict_point_cloud(model, points, cmap=None):
     points_2d = generate_lidar_2d_front_view(points, cmap=cmap)    
             
     input = np.ndarray(shape=(IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
@@ -137,9 +138,7 @@ def predict_point_cloud(model, points, cmap='jet'):
 
     model_input = np.asarray([input])
 
-    print(model_input.shape)
-
-    prediction = model.predict(model_input)
+    prediction = model.predict(model_input, verbose=1)
     centroid, _, _ = find_obstacle(prediction[0], INPUT_SHAPE)
     if centroid is None:
         centroid = (0, 0)

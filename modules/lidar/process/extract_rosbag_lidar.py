@@ -60,15 +60,15 @@ def lidar_2d_front_view(points, res, fov, type, cmap = None):
     y_img_int = y_img.astype(int)
     x_img_int = x_img.astype(int)
     img = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1)) * min_val
-    norm = np.ones((globals.Y_MAX + 1, globals.X_MAX + 1)) * 10000
 
-    # should only keep point nearest to observer for duplicate x,y values
-    for x, y, p, l in zip(x_img_int, y_img_int, pixel_values, l2_norm):
-        y = min(y, globals.Y_MAX)
-        y = max(y, 0)
-        if norm[y, x] > l:
-            img[y, x] = p
-            norm[y, x] = l
+    # sort from highest to lowest l2_norm, so the nearest is kept
+    sorted_pos = np.flipud(l2_norm.argsort())
+
+    y_img_int = y_img_int[sorted_pos]
+    x_img_int = x_img_int[sorted_pos]
+    pixel_values = pixel_values[sorted_pos]
+
+    img[y_img_int, x_img_int] = pixel_values
 
     # flip pixels because y-axis increases as the laser angle increases downward
     img = np.flipud(img)
