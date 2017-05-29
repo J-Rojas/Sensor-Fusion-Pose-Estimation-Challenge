@@ -1,15 +1,18 @@
 #!/usr/bin/env python
-
-import numpy as np
 import sys
+sys.path.append('./lidar_module/')
+import numpy as np
+import argparse
 import rospy
 import tf
 import sensor_msgs.point_cloud2
 from sensor_msgs.msg import PointCloud2
 from visualization_msgs.msg import Marker
-
+from lidar_module.pipeline import LIDARPipeline
 
 frame_id = "lidar_pred_center"
+
+lidar_pipeline = None
 
 def fake_model(points):
     return np.average(points, axis=1)
@@ -46,7 +49,10 @@ def lidar_cloud_to_numpy(msg):
     points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
     points = np.array(list(points))
     #print(points)
-    position = fake_model(points)
+    global lidar_pipeline
+    if lidar_pipeline is None:
+        lidar_pipeline = LIDARPipeline(args.weightsFile)
+    position = lidar_pipeline.predict_position(points)
     add_frame(position)
     publish()
 
@@ -57,6 +63,16 @@ def lidar_callback(msg, who):
 
 
 if __name__ == '__main__':
+
+    print(sys.argv)
+
+    parser = argparse.ArgumentParser(description='Team-SF Ros Node')
+    parser.add_argument('bag', type=str, default="", help='Model Filename')
+    parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
+    parser.add_argument('args', nargs=argparse.REMAINDER)
+
+    args = parser.parse_args()
+
     rospy.init_node('base_link_lidar_predict')
     rospy.Subscriber('/velodyne_points', PointCloud2, lidar_callback, "")
     rospy.spin()
