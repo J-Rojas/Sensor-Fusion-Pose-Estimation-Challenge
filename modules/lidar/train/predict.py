@@ -12,7 +12,7 @@ import sensor_msgs.point_cloud2
 
 print(sys.path)
 sys.path.append('../')
-from process.globals import X_MIN, Y_MIN, RES, RES_RAD
+from process.globals import X_MIN, Y_MIN, RES, RES_RAD, LIDAR_MIN_HEIGHT
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
@@ -79,28 +79,59 @@ def find_obstacle(y_pred, input_shape):
 # take in find_obstacle() batch output (centroid x/theata,y/phi) and batch input(distance map) 
 # and back project 2D centroid to 3D centroid(x,y,z)
 #
-def back_project_2D_2_3D(centroids, distance_data, height_data):
+def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
     
     xyz_coor = np.zeros((centroids.shape[0],3))
     
+    valid_points_mask = np.logical_and(distance_data > 0, height_data > LIDAR_MIN_HEIGHT)
+    dist_2_centroid = np.ones_like(distance_data[0,:,:])*10e7
+    w = distance_data[0,:,:].shape[1]
+    h = distance_data[0,:,:].shape[0]
+
     for i in range(centroids.shape[0]):
 
+        c_k = int(centroids[i,1])
+        c_l = int(centroids[i,0])
+        if not(valid_points_mask[i, c_k, c_l]):
+            dist_2_centroid[:,:] = 10e7
+            for k in range(int(bboxes[i,1]),int(bboxes[i,3])):
+                for l in range(int(bboxes[i,0]),int(bboxes[i,2])):
+                    if (valid_points_mask[i,k,l]):
+                        y_diff = k - c_k
+                        x_diff = l - c_l
+                        dist_2_centroid[k,l] = np.sqrt(y_diff*y_diff+x_diff*x_diff)
+            
+            min_ind = np.argmin(dist_2_centroid)
+            min_val = np.min(dist_2_centroid)   
+            
+            # cannot find any valid point.. zero out centroid and bounding box
+            if (min_val == 10e7):
+                centroids[i,1] = 0
+                centroids[i,0] = 0  
+                bboxes[i,0] = 0
+                bboxes[i,1] = 0
+                bboxes[i,2] = 0
+                bboxes[i,3] = 0
+                print('cannot find valid centroid')
+            else:
+                centroids[i,1] = min_ind/w
+                centroids[i,0] = min_ind%w  
+                print('new centroid selected')
+                          
         distance = distance_data[i, int(centroids[i,1]), int(centroids[i,0])]
         height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
         theata = (centroids[i,0] + X_MIN) * RES_RAD[1]
-
-        # increase distance to approximate centroid - not surface of car
+              
+        # increase  to approximate centroid - not surface of car
         distance += 0.75
-
-        phi_ind = centroids[i,1]
         
         xyz_coor[i,0] = distance * math.cos(theata)
         xyz_coor[i,1] = - distance * math.sin(theata)
         xyz_coor[i,2] = height
 
-        # print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
-        #      format(centroids[i], height, theata,
-        #             xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
+        print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
+             format(centroids[i], height, theata,
+                    xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
 
     return xyz_coor
 
@@ -252,7 +283,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
 
             cv2.imwrite(file_prefix + "_class.png", image)
         
-    xyz_pred = back_project_2D_2_3D(centroids, all_images[:,:,:,0], all_images[:,:,:,1])
+    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
     
     return xyz_pred, timestamps
         
