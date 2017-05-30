@@ -12,6 +12,7 @@ import sensor_msgs.point_cloud2
 import matplotlib.image as mpimg
 import pickle
 import globals
+import fnmatch
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 
@@ -38,7 +39,7 @@ def initialize_invariant_pixels_new(float_pixels,type):
     else:
         print "invalid type"
         return
-    
+
 #updating the mask. Shall be called for each frame
 def update_invariant_pixels_new(float_pixels,type):
     global intensity_reference, height_reference, distance_reference
@@ -81,12 +82,11 @@ def main():
         print('output_dir ' + output_dir + ' does not exist')
         sys.exit()
 
+    for root, dirnames, filenames in os.walk(input_dir):
+        for filename in fnmatch.filter(filenames, '*.bag'):
+            bag_file = os.path.join(root, filename)
 
-    for file in os.listdir(input_dir):
-        if file.endswith(".bag"):
-            bag_file = os.path.join(input_dir, file)
-
-            print("Extract velodyne_points from {} into {}".format(bag_file, args.output_dir))
+            print("Extract velodyne_points from {}".format(bag_file))
 
             bag = rosbag.Bag(bag_file, "r")
             print "Finding the pixels for mask"
