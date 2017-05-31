@@ -2,7 +2,7 @@
 	<arg name="bag"/>
 	<arg name="weightsFile"/>
 		
-	<node name="obs_centroid_publisher" pkg="team_sf_rosnode" type="lidar_predict.py" output="screen" args="$(arg bag) $(arg weightsFile) $(arg metadataPath)"/>
+	<node name="obs_centroid_publisher" pkg="team_sf_rosnode" type="lidar_predict.py" output="screen" args="$(arg bag) $(arg weightsFile)"/>
 	
 	<node name="player" pkg="rosbag" type="play" output="screen" args="-l --clock $(arg bag)"/>
 </launch>
