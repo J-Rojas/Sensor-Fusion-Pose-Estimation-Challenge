@@ -83,26 +83,33 @@ def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
     
     xyz_coor = np.zeros((centroids.shape[0],3))
     
-    valid_points_mask = np.logical_and(distance_data > 0, height_data > LIDAR_MIN_HEIGHT)
-    dist_2_centroid = np.ones_like(distance_data[0,:,:])*10e7
     w = distance_data[0,:,:].shape[1]
-    h = distance_data[0,:,:].shape[0]
-
+    h = distance_data[0,:,:].shape[0]    
+    
+    valid_points_mask = np.logical_and(distance_data > 0, height_data > LIDAR_MIN_HEIGHT)
+    
+    ind_y, ind_x = np.unravel_index(np.arange(w*h),(h,w))
+    ind_y_2d = np.reshape(ind_y,(h,w))
+    ind_x_2d = np.reshape(ind_x,(h,w))        
+        
     for i in range(centroids.shape[0]):
-
-        c_k = int(centroids[i,1])
-        c_l = int(centroids[i,0])
-        if not(valid_points_mask[i, c_k, c_l]):
-            dist_2_centroid[:,:] = 10e7
-            for k in range(int(bboxes[i,1]),int(bboxes[i,3])):
-                for l in range(int(bboxes[i,0]),int(bboxes[i,2])):
-                    if (valid_points_mask[i,k,l]):
-                        y_diff = k - c_k
-                        x_diff = l - c_l
-                        dist_2_centroid[k,l] = np.sqrt(y_diff*y_diff+x_diff*x_diff)
+                
+        if (not(valid_points_mask[i,int(centroids[i,1]), int(centroids[i,0])])):
+        
+            bb_left = int(bboxes[i,0])
+            bb_right = int(bboxes[i,2])
+            bb_top = int(bboxes[i,1])
+            bb_bottom = int(bboxes[i,3])                             
+                                    
+            dist_x = ind_x_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,0])
+            dist_y = ind_y_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,1])
+            dist_2_centroid = np.sqrt(dist_x*dist_x + dist_y*dist_y)
             
-            min_ind = np.argmin(dist_2_centroid)
-            min_val = np.min(dist_2_centroid)   
+            dist_2_centroid_valid = np.where(valid_points_mask[i, bb_top:bb_bottom,bb_left:bb_right], dist_2_centroid, 10e7)
+            min_ind = np.argmin(dist_2_centroid_valid)
+            min_val = np.min(dist_2_centroid_valid)   
+            
+            #print('min index {} min value {}'.format(min_ind, min_val))
             
             # cannot find any valid point.. zero out centroid and bounding box
             if (min_val == 10e7):
@@ -114,9 +121,11 @@ def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
                 bboxes[i,3] = 0
                 print('cannot find valid centroid')
             else:
-                centroids[i,1] = min_ind/w
-                centroids[i,0] = min_ind%w  
-                print('new centroid selected')
+                new_ind_1, new_ind_0 = np.unravel_index([min_ind],(bb_bottom-bb_top,bb_right-bb_left))
+                new_ind_1 += bb_top
+                new_ind_0 += bb_left
+                print(' new centroid selected old: {} {} new: {} {}'.format(centroids[i,1], centroids[i,0], new_ind_1, new_ind_0))
+                centroids[i,1], centroids[i,0] = new_ind_1, new_ind_0
                           
         distance = distance_data[i, int(centroids[i,1]), int(centroids[i,0])]
         height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
