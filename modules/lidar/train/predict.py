@@ -179,15 +179,17 @@ def predict_point_cloud(model, points, cmap=None):
 
     model_input = np.asarray([input])
 
-    prediction = model.predict(model_input, verbose=1)
-    centroid, _, _ = find_obstacle(prediction[0], INPUT_SHAPE)
+    prediction = model.predict(model_input)
+    centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE)
     if centroid is None:
         centroid = (0, 0)
-        
+        bbox = (0, 0, 0, 0)
+
     centroids = np.array(centroid).reshape(1, 2)
+    bboxes = np.array(bbox).reshape(1,4)
     distance_data = np.array(points_2d['distance_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
     height_data = np.array(points_2d['height_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
-    centroid_3d = back_project_2D_2_3D(centroids, distance_data, height_data)[0]
+    centroid_3d = back_project_2D_2_3D(centroids, bboxes, distance_data, height_data)[0]
     #print('predicted centroid: {}'.format(centroid_3d))
     
     return centroid_3d
