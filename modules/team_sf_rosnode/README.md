@@ -46,5 +46,5 @@ roslaunch team_sf_rosnode visualize.launch
 
 Visualiz a bag file:
 ``` 
-roslaunch team_sf_rosnode lidar_predict.launch bag:=<BAG_PATH> weightsFile:=<WEIGHT_FILE_PATH>
+roslaunch team_sf_rosnode lidar_predict.launch bag:=<BAG_PATH> weightsFile:=<WEIGHT_FILE_PATH> metadataPath:=<METADATA_PATH>
 ```
