@@ -94,12 +94,13 @@ def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
         
     for i in range(centroids.shape[0]):
                 
-        if (not(valid_points_mask[i,int(centroids[i,1]), int(centroids[i,0])])):
+        if (not(valid_points_mask[i,int(centroids[i,1]), int(centroids[i,0])]) and (bboxes[i,0] != 0) and (bboxes[i,2] != 0)):
         
             bb_left = int(bboxes[i,0])
-            bb_right = int(bboxes[i,2])
+            bb_right = int(bboxes[i,2])+1
             bb_top = int(bboxes[i,1])
-            bb_bottom = int(bboxes[i,3])                             
+            bb_bottom = int(bboxes[i,3])+1  
+            #print('bounding box left {} right {} top {} bottom {}'.format(bb_left, bb_right, bb_top, bb_bottom))                           
                                     
             dist_x = ind_x_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,0])
             dist_y = ind_y_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,1])
