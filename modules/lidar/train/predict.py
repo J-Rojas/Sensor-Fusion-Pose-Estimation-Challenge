@@ -12,7 +12,7 @@ import sensor_msgs.point_cloud2
 
 print(sys.path)
 sys.path.append('../')
-from process.globals import X_MIN, Y_MIN, RES, RES_RAD
+from process.globals import X_MIN, Y_MIN, RES, RES_RAD, LIDAR_MIN_HEIGHT
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
@@ -79,28 +79,69 @@ def find_obstacle(y_pred, input_shape):
 # take in find_obstacle() batch output (centroid x/theata,y/phi) and batch input(distance map) 
 # and back project 2D centroid to 3D centroid(x,y,z)
 #
-def back_project_2D_2_3D(centroids, distance_data, height_data):
+def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
     
     xyz_coor = np.zeros((centroids.shape[0],3))
     
+    w = distance_data[0,:,:].shape[1]
+    h = distance_data[0,:,:].shape[0]    
+    
+    valid_points_mask = np.logical_and(distance_data > 0, height_data > LIDAR_MIN_HEIGHT)
+    
+    ind_y, ind_x = np.unravel_index(np.arange(w*h),(h,w))
+    ind_y_2d = np.reshape(ind_y,(h,w))
+    ind_x_2d = np.reshape(ind_x,(h,w))        
+        
     for i in range(centroids.shape[0]):
-
+                
+        if (not(valid_points_mask[i,int(centroids[i,1]), int(centroids[i,0])]) and (bboxes[i,0] != 0) and (bboxes[i,2] != 0)):
+        
+            bb_left = int(bboxes[i,0])
+            bb_right = int(bboxes[i,2])+1
+            bb_top = int(bboxes[i,1])
+            bb_bottom = int(bboxes[i,3])+1  
+            #print('bounding box left {} right {} top {} bottom {}'.format(bb_left, bb_right, bb_top, bb_bottom))                           
+                                    
+            dist_x = ind_x_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,0])
+            dist_y = ind_y_2d[bb_top:bb_bottom,bb_left:bb_right] - int(centroids[i,1])
+            dist_2_centroid = np.sqrt(dist_x*dist_x + dist_y*dist_y)
+            
+            dist_2_centroid_valid = np.where(valid_points_mask[i, bb_top:bb_bottom,bb_left:bb_right], dist_2_centroid, 10e7)
+            min_ind = np.argmin(dist_2_centroid_valid)
+            min_val = np.min(dist_2_centroid_valid)   
+            
+            #print('min index {} min value {}'.format(min_ind, min_val))
+            
+            # cannot find any valid point.. zero out centroid and bounding box
+            if (min_val == 10e7):
+                centroids[i,1] = 0
+                centroids[i,0] = 0  
+                bboxes[i,0] = 0
+                bboxes[i,1] = 0
+                bboxes[i,2] = 0
+                bboxes[i,3] = 0
+                print('cannot find valid centroid')
+            else:
+                new_ind_1, new_ind_0 = np.unravel_index([min_ind],(bb_bottom-bb_top,bb_right-bb_left))
+                new_ind_1 += bb_top
+                new_ind_0 += bb_left
+                print(' new centroid selected old: {} {} new: {} {}'.format(centroids[i,1], centroids[i,0], new_ind_1, new_ind_0))
+                centroids[i,1], centroids[i,0] = new_ind_1, new_ind_0
+                          
         distance = distance_data[i, int(centroids[i,1]), int(centroids[i,0])]
         height = height_data[i, int(centroids[i,1]), int(centroids[i,0])]
         theata = (centroids[i,0] + X_MIN) * RES_RAD[1]
-
-        # increase distance to approximate centroid - not surface of car
+              
+        # increase  to approximate centroid - not surface of car
         distance += 0.75
-
-        phi_ind = centroids[i,1]
         
         xyz_coor[i,0] = distance * math.cos(theata)
         xyz_coor[i,1] = - distance * math.sin(theata)
         xyz_coor[i,2] = height
 
-        # print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
-        #      format(centroids[i], height, theata,
-        #             xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
+        print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
+             format(centroids[i], height, theata,
+                    xyz_coor[i,0], xyz_coor[i,1], xyz_coor[i,2]))
 
     return xyz_coor
 
@@ -138,15 +179,17 @@ def predict_point_cloud(model, points, cmap=None):
 
     model_input = np.asarray([input])
 
-    prediction = model.predict(model_input, verbose=1)
-    centroid, _, _ = find_obstacle(prediction[0], INPUT_SHAPE)
+    prediction = model.predict(model_input)
+    centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE)
     if centroid is None:
         centroid = (0, 0)
-        
+        bbox = (0, 0, 0, 0)
+
     centroids = np.array(centroid).reshape(1, 2)
+    bboxes = np.array(bbox).reshape(1,4)
     distance_data = np.array(points_2d['distance_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
     height_data = np.array(points_2d['height_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
-    centroid_3d = back_project_2D_2_3D(centroids, distance_data, height_data)[0]
+    centroid_3d = back_project_2D_2_3D(centroids, bboxes, distance_data, height_data)[0]
     #print('predicted centroid: {}'.format(centroid_3d))
     
     return centroid_3d
@@ -252,7 +295,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
 
             cv2.imwrite(file_prefix + "_class.png", image)
         
-    xyz_pred = back_project_2D_2_3D(centroids, all_images[:,:,:,0], all_images[:,:,:,1])
+    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
     
     return xyz_pred, timestamps
         
