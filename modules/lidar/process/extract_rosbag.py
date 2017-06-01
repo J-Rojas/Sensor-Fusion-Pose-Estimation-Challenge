@@ -13,7 +13,7 @@ from cv_bridge import CvBridge
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 from extract_rosbag_lidar import save_lidar_2d_images
 from common.birds_eye_view_generator import generate_birds_eye_view
-from common.lidar_data_interpolation import interpolate_lidar_with_rtk
+from common.interpolate import TrackletInterpolater
 
 class ROSBagExtractor:
 
@@ -208,8 +208,8 @@ def main():
     parser.add_argument('--pickle', dest='pickle', default=None, action='store_true', help='Export pickle files')
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
-    parser.add_argument('--interpolate', dest='interpolate', action='store_true', help='Generate Lidar interpolation')
-    parser.set_defaults(quiet=False, display=False, interpolate=False)
+    parser.add_argument('--interpolate', type=str, dest='interpolate', help='Interpolate with tracklet file')
+    parser.set_defaults(quiet=False, display=False)
 
     args = parser.parse_args()
 
@@ -273,7 +273,18 @@ def main():
 
     # generate lidar interpolation
     if args.interpolate:
-        interpolate_lidar_with_rtk(args.bag_file, args.metadata, output_dir)
+
+        print('interpolating...')
+
+        interpolater = TrackletInterpolater()
+        lidar_ground_truth = interpolater.interpolate_from_tracklet(args.interpolate, extractor.lidar_timestamps)
+
+        with open(output_dir + '/obs_poses_interp_transform.csv', 'w') as csvfile:
+
+            writer = csv.DictWriter(csvfile, ['timestamp', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz'], delimiter=',', restval='', )
+
+            writer.writeheader()
+            writer.writerows(lidar_ground_truth)
 
     #Load pickle:
     #input

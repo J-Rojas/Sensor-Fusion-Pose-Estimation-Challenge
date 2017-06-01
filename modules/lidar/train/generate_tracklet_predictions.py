@@ -63,7 +63,7 @@ def main():
         tracklet = Tracklet('Car', float(mdr['l']), float(mdr['w']), float(mdr['h']))
 
     # fudge factor to increase score
-    offset = [-8.93, 0.35, -.22]
+    offset = [-8.8, 0.32, -.13]
 
     for camera_timestamp in camera_timestamps:
         if camera_timestamp < timestamps[0]:
