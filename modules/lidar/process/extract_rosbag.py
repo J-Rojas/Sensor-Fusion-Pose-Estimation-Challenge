@@ -277,7 +277,11 @@ def main():
         print('interpolating...')
 
         interpolater = TrackletInterpolater()
-        lidar_ground_truth = interpolater.interpolate_from_tracklet(args.interpolate, extractor.lidar_timestamps)
+        lidar_ground_truth = interpolater.interpolate_from_tracklet(
+            args.interpolate,
+            extractor.camera_timestamps,
+            extractor.lidar_timestamps
+        )
 
         with open(output_dir + '/obs_poses_interp_transform.csv', 'w') as csvfile:
 

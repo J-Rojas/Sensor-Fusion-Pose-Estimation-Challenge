@@ -22,13 +22,17 @@ class TrackletInterpolater:
 
         return timestamps
 
-    def interpolate_from_tracklet(self, tracklet_file, timestamps):
+    def interpolate_from_tracklet(self, tracklet_file, source_timestamps, dest_timestamps):
 
-        if type(timestamps) is str:
-            timestamps = self.load_timestamps_from_csv(timestamps)
+        if type(source_timestamps) is str:
+            source_timestamps = self.load_timestamps_from_csv(source_timestamps)
         else:
-            assert(type(timestamps) is list)
+            assert(type(dest_timestamps) is list)
 
+        if type(dest_timestamps) is str:
+            dest_timestamps = self.load_timestamps_from_csv(dest_timestamps)
+        else:
+            assert (type(dest_timestamps) is list)
 
         f = open(tracklet_file)
         data = f.read().replace('\n', '')
@@ -36,9 +40,10 @@ class TrackletInterpolater:
 
         dataDict = tracket_parser.xml_to_dict(data)
         tracklet = tracket_parser.clean_items_list(dataDict)
-        tracket_parser.put_timestamps_with_frame_ids(tracklet, timestamps)
 
-        return self.interpolate(tracklet, timestamps)
+        tracket_parser.put_timestamps_with_frame_ids(tracklet, source_timestamps)
+
+        return self.interpolate(tracklet, dest_timestamps)
 
     def interpolate_from_csv(self, csv_file, timestamps):
 
