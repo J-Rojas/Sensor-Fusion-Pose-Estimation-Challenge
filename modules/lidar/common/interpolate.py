@@ -74,10 +74,6 @@ class TrackletInterpolater:
         tys = list(map(lambda x: x['ty'], source))
         tzs = list(map(lambda x: x['tz'], source))
 
-        print(timestamps)
-        print(txs)
-        print(tys)
-
         fx = scipy.interpolate.interp1d(timestamps, txs, fill_value='extrapolate')
         fy = scipy.interpolate.interp1d(timestamps, tys, fill_value='extrapolate')
         fz = scipy.interpolate.interp1d(timestamps, tzs, fill_value='extrapolate')
