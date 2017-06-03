@@ -15,6 +15,8 @@ from extract_rosbag_lidar import save_lidar_2d_images
 from common.birds_eye_view_generator import generate_birds_eye_view
 from common.lidar_data_interpolation import interpolate_lidar_with_rtk
 
+import radar_tracks
+
 class ROSBagExtractor:
 
     def __init__(self,
@@ -36,6 +38,7 @@ class ROSBagExtractor:
         self.pickle=pickle
         self.lidar_timestamps=[]
         self.camera_timestamps = []
+        self.radar_tracks = []
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -44,6 +47,8 @@ class ROSBagExtractor:
                 os.makedirs(self.output_dir + '/topdown/')
             if not (os.path.isdir(self.output_dir + '/camera/')):
                 os.makedirs(self.output_dir + '/camera/')
+            if not (os.path.isdir(self.output_dir + '/radar/')):
+                os.makedirs(self.output_dir + '/radar/')
 
     @staticmethod
     def save_image(output_dir, name, count, image):
@@ -107,7 +112,12 @@ class ROSBagExtractor:
         window = []
         img = []
 
-        if msg_type in ['sensor_msgs/Image']:
+        if '/radar/tracks' in topic:
+            tracks = radar_tracks.parse_msg(msg, timestamp)
+            if len(tracks) > 0:
+                self.radar_tracks += tracks
+
+        elif msg_type in ['sensor_msgs/Image']:
 
             self.camera_timestamps.append(timestamp.to_nsec())
 
@@ -181,6 +191,15 @@ class ROSBagExtractor:
                 size = w.get_size()
                 i.blit(0, 0, width=size[0], height=size[1])
                 w.flip()
+
+    def save_radar_tracks(self):
+        if len(self.radar_tracks) == 0:
+            return
+
+        with open(os.path.join(self.output_dir, 'radar', 'radar_tracks.csv'), 'wb') as output_file:
+            writer = csv.DictWriter(output_file, self.radar_tracks[0].keys())
+            writer.writeheader()
+            writer.writerows(self.radar_tracks)
 
 def write_timestamps_to_csv(timestamps, output_file):
 
@@ -266,6 +285,8 @@ def main():
                     extractor.print_msg(msgType, topic, msg, t, startsec)
                 if args.display or output_dir:
                     extractor.handle_msg(msgType, topic, msg, t, result)
+
+    extractor.save_radar_tracks()
 
     # export timestamps
     write_timestamps_to_csv(extractor.lidar_timestamps, output_dir + '/lidar_timestamps.csv')
