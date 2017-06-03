@@ -78,17 +78,13 @@ class TrackletInterpolater:
         print(txs)
         print(tys)
 
-        fx = scipy.interpolate.interp1d(timestamps, txs)
-        fy = scipy.interpolate.interp1d(timestamps, tys)
-        fz = scipy.interpolate.interp1d(timestamps, tzs)
+        fx = scipy.interpolate.interp1d(timestamps, txs, fill_value='extrapolate')
+        fy = scipy.interpolate.interp1d(timestamps, tys, fill_value='extrapolate')
+        fz = scipy.interpolate.interp1d(timestamps, tzs, fill_value='extrapolate')
 
         dest_data = []
 
         for dest_timestamp in dest_timestamps:
-            if dest_timestamp < timestamps[0]:
-                dest_timestamp = timestamps[0]
-            elif dest_timestamp > timestamps[-1]:
-                dest_timestamp = timestamps[-1]
             dest_data.append({'timestamp': dest_timestamp,
                               'tx': fx(dest_timestamp),
                               'ty': fy(dest_timestamp),
