@@ -12,9 +12,6 @@ from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 from extract_rosbag_lidar import save_lidar_2d_images
-from rectify_image import extract_calib_info
-from rectify_image import initUndistortRectifyMap
-from rectify_image import remap
 from common.birds_eye_view_generator import generate_birds_eye_view
 from common.interpolate import TrackletInterpolater
 
@@ -29,8 +26,7 @@ class ROSBagExtractor:
                  cmap=None,
                  output_dir=None,
                  display=False,
-                 pickle=False,
-                 yaml_path=None):
+                 pickle=False):
         self.windows = {}
         self.bridge = CvBridge()
         self.window_max_width = window_max_width
@@ -43,7 +39,6 @@ class ROSBagExtractor:
         self.lidar_timestamps=[]
         self.camera_timestamps = []
         self.radar_tracks = []
-        self.yaml_path = yaml_path
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -54,10 +49,6 @@ class ROSBagExtractor:
                 os.makedirs(self.output_dir + '/camera/')
             if not (os.path.isdir(self.output_dir + '/radar/')):
                 os.makedirs(self.output_dir + '/radar/')
-
-        if not os.path.isfile(self.yaml_path):
-            print('yaml_path ' + self.yaml_path + ' does not exist. So the output images will not be rectified')
-        
 
     @staticmethod
     def save_image(output_dir, name, count, image):
@@ -237,15 +228,13 @@ def main():
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
     parser.add_argument('--interpolate', type=str, dest='interpolate', help='Interpolate with tracklet file')
-    parser.add_argument('--yaml_path', type=str, default=None,  help='Yaml for image rectification')
     parser.set_defaults(quiet=False, display=False)
 
     args = parser.parse_args()
 
     bag_file = args.bag_file
     output_dir = args.outdir
-    yaml_path = args.yaml_path
-    
+
     if not os.path.isfile(bag_file):
         print('bag_file ' + bag_file + ' does not exist')
         sys.exit()
@@ -253,7 +242,7 @@ def main():
     if output_dir is not None and not(os.path.isdir(output_dir)):
         print('output_dir ' + output_dir + ' does not exist')
         sys.exit()
-        
+
     skip = args.skip
     startsec = 0
     last_topic_time = {}
