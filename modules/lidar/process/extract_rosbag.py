@@ -135,8 +135,8 @@ class ROSBagExtractor:
             elif 'right' in topic:
                 name = 'right'
 
-            #if self.output_dir is not None:
-            #    self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
+            if self.output_dir is not None:
+                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
@@ -217,8 +217,8 @@ def main():
     appTitle = "Udacity Team-SF: ROSbag viewer"
     parser = argparse.ArgumentParser(description=appTitle)
     parser.add_argument('bag_file', type=str, help='ROS Bag name')
-    parser.add_argument('metadata', type=str, help='Metadata file')
-    parser.add_argument('--skip', type=int, default="0", help='skip seconds')
+    parser.add_argument('--skip', type=float, default="0", help='skip seconds')
+    parser.add_argument('--length', type=float, default=None, help='length seconds')
     parser.add_argument('--display', dest='display', action='store_true', help='Display output')
     parser.add_argument('--topics', type=str, default=None, help='Topic list to display')
     parser.add_argument('--topdown_res', type=float, default=2, help='Topdown image fidelity (meters/pixel)')
@@ -244,6 +244,7 @@ def main():
         sys.exit()
 
     skip = args.skip
+    length = args.length
     startsec = 0
     last_topic_time = {}
     maximum_gap_topic = {}
@@ -273,6 +274,9 @@ def main():
                 print("skipping to ", skip, " from ", startsec, " ...")
         else:
             if t.to_sec() > skipping:
+
+                if length is not None and t.to_sec() > skipping + length:
+                    break
 
                 if last_topic_time.get(topic) != None:
                     gap = t.to_sec() - last_topic_time[topic]
