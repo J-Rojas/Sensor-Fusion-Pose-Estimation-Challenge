@@ -34,9 +34,10 @@ def initUndistortRectifyMap(calibration_info):
     img_dim = (calibration_info.width,calibration_info.height)
     mtx = (np.array(calibration_info.K)).reshape(3, 3)
     dist = np.array(calibration_info.D)
+    rectif = np.array(calibration_info.R).reshape(3, 3)
     #print mtx, dist
     newcameramtx, new_size = cv2.getOptimalNewCameraMatrix(mtx, dist, img_dim, 1, img_dim)
-    mapx,mapy = cv2.initUndistortRectifyMap(mtx, dist, None, newcameramtx, img_dim, 5)
+    mapx,mapy = cv2.initUndistortRectifyMap(mtx, dist, rectif, newcameramtx, img_dim, 5)
     return mapx, mapy, new_size
 
 
