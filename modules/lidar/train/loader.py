@@ -13,7 +13,7 @@ import globals
 from common.csv_utils import foreach_dirset
 from random import randrange
 from collections import defaultdict
-from encoder import generate_label, get_outer_rect
+from encoder import generate_label, get_label_bounds
 
 
 def usage():
@@ -32,23 +32,23 @@ def data_random_rotate(image, label, obj_center, obj_size):
     
     # get bounding box of object in 2D
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
-        get_outer_rect(obj_center[0],obj_center[1],obj_center[2], obj_size[0], obj_size[1], obj_size[2])
+        get_label_bounds(obj_center[0], obj_center[1], obj_center[2], obj_size[0], obj_size[1], obj_size[2])
     
     # do not rotate if object rolls partially to right/left of the image  
     # get another random number
     rotate_by = randrange(0, globals.IMG_WIDTH)
-    while (upper_left_x+rotate_by <= globals.IMG_WIDTH and lower_right_x+rotate_by >= globals.IMG_WIDTH):
+    while upper_left_x+rotate_by <= globals.IMG_WIDTH <= lower_right_x+rotate_by:
         rotate_by = randrange(0, globals.IMG_WIDTH)
     
     #print "rotate_by: " + str(rotate_by)
     label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CLASSES))
-    rotated_label = np.roll(label_reshaped,rotate_by,axis=1)
+    rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
     rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, globals.NUM_CLASSES))
-    rotated_img = np.roll(image,rotate_by,axis=1)
+    rotated_img = np.roll(image, rotate_by, axis=1)
     
     # copy back rotated parts to original images/label
-    np.copyto(image,rotated_img)
-    np.copyto(label,rotated_flatten_label)
+    np.copyto(image, rotated_img)
+    np.copyto(label, rotated_flatten_label)
 
 # 
 # rotate data in a given batch
@@ -239,12 +239,8 @@ def file_prefix_for_timestamp(parent_dir, ts=None):
 # ***** main loop *****
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
-        usage()
-        sys.exit()
-
     parser = argparse.ArgumentParser(description="Load training data and ground truths")
-    parser.add_argument("--input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
+    parser.add_argument("input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
 
     args = parser.parse_args()
@@ -269,5 +265,7 @@ if __name__ == "__main__":
     
     images, obj_labels = next(generator)
     
-    
-    
+    #print car pixels
+    print("car pixels: ", len(np.where(obj_labels[:, :, 1] == 1)[1]))
+    print("non-car pixels: ", len(np.where(obj_labels[:, :, 1] == 0)[1]))
+
