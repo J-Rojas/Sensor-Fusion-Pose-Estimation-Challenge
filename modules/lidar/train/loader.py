@@ -82,7 +82,7 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 # read in images/ground truths batch by batch
 #
-def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True):
+def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -108,7 +108,8 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
             load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
             load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
                             (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
-            batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
+            if augment:
+                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
             yield (images, obj_labels)
 
