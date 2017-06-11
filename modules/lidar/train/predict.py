@@ -222,7 +222,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
         data_generator_train(
             predict_data[0], predict_data[2], predict_data[1],
             BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
-            randomize=False
+            randomize=False, augment=False
         ),
         n_batches_per_epoch,
         verbose=0
@@ -233,7 +233,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
     # reload data as one big batch
     all_data_loader = data_generator_train(predict_data[0], predict_data[2], predict_data[1],
             len(predict_data[1]), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
-            randomize=False)
+            randomize=False, augment=False)
     all_images, all_labels = all_data_loader.next()
     
 

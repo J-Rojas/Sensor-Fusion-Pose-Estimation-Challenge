@@ -6,7 +6,6 @@ import glob
 import argparse
 import csv
 import sys
-import random
 import pickle
 import pandas as pd
 import globals
@@ -53,17 +52,37 @@ def data_random_rotate(image, label, obj_center, obj_size):
 # 
 # rotate data in a given batch
 #
-def batch_random_rotate(images, labels, tx, ty, tz, obsl, obsw, obsh):
+def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh):
 
-    for i in range(len(images)):
-       obj_center = [tx[i],ty[i],tz[i]]
-       obj_size = [obsl[i],obsw[i],obsh[i]]
-       data_random_rotate(images[i], labels[i], obj_center, obj_size) 
+    img_ind = 0
+    for ind in indicies:
+
+        obj_center = [tx[ind], ty[ind], tz[ind]]
+        obj_size = [obsl[ind], obsw[ind], obsh[ind]]
+        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size)
+
+        img_ind += 1
+
+
+def generate_index_list(indicies_list, randomize, num_batches, batch_size):
+    if randomize:
+        np.random.shuffle(indicies_list)
+
+    indicies = indicies_list
+    if len(indicies_list) < num_batches * batch_size:
+        # add records from entire set to fill remaining space in batch
+        indicies_list_rem = np.arange(len(indicies_list))
+        if randomize:
+            np.random.shuffle(indicies_list_rem)
+        rem = num_batches * batch_size - len(indicies_list)
+        indicies = np.concatenate((indicies_list, indicies_list_rem[0:rem]))
+
+    return indicies
 
 #
 # read in images/ground truths batch by batch
 #
-def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True):
+def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -76,19 +95,21 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
 
+    indicies_list = np.arange(len(tx))
+
     while 1:
 
-        ziplist = list(zip(tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix))
-        if randomize:
-            random.shuffle(ziplist)
-        tx, ty, tz, obsl, obsw, obsh, pickle_dir_and_prefix = zip(*ziplist)
+        indicies = generate_index_list(indicies_list, randomize, num_batches, BATCH_SIZE)
 
         for batch in range(num_batches):
 
-            load_lidar_data(images, pickle_dir_and_prefix, batch*BATCH_SIZE, BATCH_SIZE)
-            load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh,
-                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES), batch*BATCH_SIZE, BATCH_SIZE)
-            batch_random_rotate(images, obj_labels, tx, ty, tz, obsl,obsw,obsh)
+            batch_indicies = indicies[batch * BATCH_SIZE:batch * BATCH_SIZE + BATCH_SIZE]
+
+            load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
+            load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
+                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+            if augment:
+                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
             yield (images, obj_labels)
 
@@ -97,59 +118,61 @@ def data_generator_predict(pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WI
 
     images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
-    random.shuffle(pickle_dir_and_prefix)
+
+    indicies_list = np.arange(len(pickle_dir_and_prefix))
 
     while 1:
 
-        for ind in range(num_batches):
-            load_lidar_data(images, pickle_dir_and_prefix, BATCH_SIZE)
+        indicies = generate_index_list(indicies_list, True, num_batches, BATCH_SIZE)
+
+        for batch in range(num_batches):
+
+            batch_indicies = indicies[batch * BATCH_SIZE:batch * BATCH_SIZE + BATCH_SIZE]
+
+            load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
             yield images
 
 
-def load_lidar_data(images, pickle_dir_and_prefix, offset, size):
+def load_lidar_data(indicies, images, pickle_dir_and_prefix):
 
     batch_index = 0
 
-    for ind in range(offset, offset + size):
+    for ind in indicies:
 
-        if ind < len(pickle_dir_and_prefix):
+        fname = pickle_dir_and_prefix[ind] + "_distance_float.lidar.p"
 
-            fname = pickle_dir_and_prefix[ind] + "_distance_float.lidar.p"
+        f = open(fname, 'rb')
+        pickle_data = pickle.load(f)
+        img_arr = np.asarray(pickle_data, dtype='float32')
+        np.copyto(images[batch_index, :, :, 0], img_arr)
+        f.close();
 
-            f = open(fname, 'rb')
-            pickle_data = pickle.load(f)
-            img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index, :, :, 0], img_arr)
-            f.close();
+        fname = pickle_dir_and_prefix[ind] + "_height_float.lidar.p"
+        f = open(fname, 'rb')
+        pickle_data = pickle.load(f)
+        img_arr = np.asarray(pickle_data, dtype='float32')
+        np.copyto(images[batch_index, :, :, 1], img_arr)
+        f.close();
 
-            fname = pickle_dir_and_prefix[ind] + "_height_float.lidar.p"
-            f = open(fname, 'rb')
-            pickle_data = pickle.load(f)
-            img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index, :, :, 1], img_arr)
-            f.close();
-
-            fname = pickle_dir_and_prefix[ind] + "_intensity_float.lidar.p"
-            f = open(fname, 'rb')
-            pickle_data = pickle.load(f)
-            img_arr = np.asarray(pickle_data, dtype='float32')
-            np.copyto(images[batch_index, :, :, 2], img_arr)
-            f.close()
+        fname = pickle_dir_and_prefix[ind] + "_intensity_float.lidar.p"
+        f = open(fname, 'rb')
+        pickle_data = pickle.load(f)
+        img_arr = np.asarray(pickle_data, dtype='float32')
+        np.copyto(images[batch_index, :, :, 2], img_arr)
+        f.close()
 
         batch_index += 1
 
 
-def load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, offset, size):
+def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
 
     batch_index = 0
 
-    for ind in range(offset, offset + size):
+    for ind in indicies:
 
-        if ind < len(tx):
-
-            label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape)
-            # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
-            np.copyto(obj_labels[batch_index], np.uint8(label))
+        label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape)
+        # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
+        np.copyto(obj_labels[batch_index], np.uint8(label))
 
         batch_index += 1
 

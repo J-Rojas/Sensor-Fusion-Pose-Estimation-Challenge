@@ -11,11 +11,10 @@ from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
 from pretrain import calculate_population_weights
 
 import tensorflow as tf
-from model import build_model
+from model import build_model, load_model
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-from keras import backend as K
-from keras.models import model_from_json
+import keras.backend as K
 
 def precision(y_true, y_pred):
     """Precision metric.
@@ -60,6 +59,7 @@ def main():
                         help="list of data folders for validation")
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
+    parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
 
     args = parser.parse_args()
@@ -76,11 +76,16 @@ def main():
     metrics = [recall, precision]
 
     if args.modelFile != "":
-        with open(args.modelFile, 'r') as jfile:
-            print("reading existing model and weights")
-            model = model_from_json(json.loads(jfile.read()))
-            weightsFile = args.modelFile.replace('json', 'h5')
-            model.load_weights(weightsFile)
+        weightsFile = args.modelFile.replace('json', 'h5')
+        if args.weightsFile != "":
+            weightsFile = args.weightsFile
+        model = load_model(args.modelFile, weightsFile,
+                           INPUT_SHAPE, NUM_CLASSES,
+                           obj_to_bkg_ratio=population_statistics_train[
+                                                'positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
+                           avg_obj_size=population_statistics_train['average_area'],
+                           metrics=metrics
+                           )
     else:
         model = build_model(
             INPUT_SHAPE,
