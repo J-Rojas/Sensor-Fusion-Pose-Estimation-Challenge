@@ -247,7 +247,7 @@ def main():
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
     parser.add_argument('--interpolate', type=str, dest='interpolate', help='Interpolate with tracklet file')
-    parser.add_argument('--yaml_path', type=str, default=None,  help='Yaml for image rectification')
+    parser.add_argument('--camera_calibration', type=str, default=None,  help='Yaml for camera image rectification')
     parser.set_defaults(quiet=False, display=False)
 
     args = parser.parse_args()
@@ -276,7 +276,7 @@ def main():
                                 topdown_max_range=args.topdown_max_range,
                                 pickle=args.pickle,
                                 display=args.display,
-                                yaml_path=args.yaml_path)
+                                yaml_path=args.camera_calibration)
 
     print("reading rosbag ", bag_file)
     bag = rosbag.Bag(bag_file, 'r')
