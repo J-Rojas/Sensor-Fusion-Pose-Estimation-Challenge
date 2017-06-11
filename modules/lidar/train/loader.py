@@ -9,10 +9,11 @@ import sys
 import random
 import pickle
 import pandas as pd
+import globals
 from common.csv_utils import foreach_dirset
-
+from random import randrange
 from collections import defaultdict
-from encoder import generate_label
+from encoder import generate_label, get_label_bounds
 
 
 def usage():
@@ -23,6 +24,41 @@ def usage():
 def data_number_of_batches_per_epoch(data, BATCH_SIZE):
     size = len(data)
     return int(size / BATCH_SIZE) + (1 if size % BATCH_SIZE != 0 else 0)
+
+#
+# rotate images/labels randomly
+#
+def data_random_rotate(image, label, obj_center, obj_size):
+    
+    # get bounding box of object in 2D
+    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
+        get_label_bounds(obj_center[0], obj_center[1], obj_center[2], obj_size[0], obj_size[1], obj_size[2])
+    
+    # do not rotate if object rolls partially to right/left of the image  
+    # get another random number
+    rotate_by = randrange(0, globals.IMG_WIDTH)
+    while upper_left_x+rotate_by <= globals.IMG_WIDTH <= lower_right_x+rotate_by:
+        rotate_by = randrange(0, globals.IMG_WIDTH)
+    
+    #print "rotate_by: " + str(rotate_by)
+    label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CLASSES))
+    rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
+    rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, globals.NUM_CLASSES))
+    rotated_img = np.roll(image, rotate_by, axis=1)
+    
+    # copy back rotated parts to original images/label
+    np.copyto(image, rotated_img)
+    np.copyto(label, rotated_flatten_label)
+
+# 
+# rotate data in a given batch
+#
+def batch_random_rotate(images, labels, tx, ty, tz, obsl, obsw, obsh):
+
+    for i in range(len(images)):
+       obj_center = [tx[i],ty[i],tz[i]]
+       obj_size = [obsl[i],obsw[i],obsh[i]]
+       data_random_rotate(images[i], labels[i], obj_center, obj_size) 
 
 #
 # read in images/ground truths batch by batch
@@ -52,6 +88,7 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
             load_lidar_data(images, pickle_dir_and_prefix, batch*BATCH_SIZE, BATCH_SIZE)
             load_label_data(obj_labels, tx, ty, tz, obsl, obsw, obsh,
                             (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES), batch*BATCH_SIZE, BATCH_SIZE)
+            batch_random_rotate(images, obj_labels, tx, ty, tz, obsl,obsw,obsh)
 
             yield (images, obj_labels)
 
@@ -202,12 +239,8 @@ def file_prefix_for_timestamp(parent_dir, ts=None):
 # ***** main loop *****
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
-        usage()
-        sys.exit()
-
     parser = argparse.ArgumentParser(description="Load training data and ground truths")
-    parser.add_argument("--input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
+    parser.add_argument("input_csv_file", type=str, default="data_folders.csv", help="data folder .csv")
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
 
     args = parser.parse_args()
@@ -223,9 +256,16 @@ if __name__ == "__main__":
         sys.exit()
 
     # determine list of data sources and ground truths to load
-    tx,ty,tz,pickle_dir_and_prefix = get_data_and_ground_truth(input_csv_file, dir_prefix)
+    obs_centroids, pickle_dir_and_prefix, obs_size = get_data_and_ground_truth(input_csv_file, dir_prefix)
 
     # generate data in batches
-    generator = data_generator(tx, ty, tz, pickle_dir_and_prefix)
-    image_distace, image_height, image_intensity, obj_location = next(generator)
-    print(image_intensity)
+    generator = data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, 
+        globals.BATCH_SIZE, globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CHANNELS, 
+        globals.NUM_CLASSES, randomize=True)   
+    
+    images, obj_labels = next(generator)
+    
+    #print car pixels
+    print("car pixels: ", len(np.where(obj_labels[:, :, 1] == 1)[1]))
+    print("non-car pixels: ", len(np.where(obj_labels[:, :, 1] == 0)[1]))
+

@@ -98,8 +98,21 @@ def get_outer_rect(tx, ty, tz, l, w, h):
     return (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
 
-def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
+def get_circle_rect(tx, ty, tz, l, w, h):
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
+
+    dim_x = (lower_right_x - upper_left_x)
+    dim_y = (lower_right_y - upper_left_y)
+
+    r = min(dim_y, dim_x)
+
+    center_point_x = upper_left_x + dim_x / 2
+    center_point_y = upper_left_y + dim_y / 2
+
+    return (center_point_x - r / 2, center_point_y - r / 2), (center_point_x + r / 2, center_point_y + r / 2)
+
+def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
+    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, l, w, h)
     r = min((lower_right_y - upper_left_y) / 2.0, (lower_right_x - upper_left_x) / 2.0)
     centroid = project_2d(tx, ty, tz)
 
@@ -117,6 +130,17 @@ def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
     y = to_categorical(label, num_classes=2)  # 1st dimension: on-vehicle, 2nd dimension: off-vehicle
 
     return y
+
+
+def get_label_bounds(tx, ty, tz, l, w, h, method='outer_rect'):
+    if method == 'circle':
+        return get_circle_rect(tx, ty, tz, l, w, h)
+    else:
+        if method == 'inner_rect':
+            return get_inner_rect(tx, ty, tz, l, w, h)
+        elif method == 'outer_rect':
+            return get_outer_rect(tx, ty, tz, l, w, h)
+    return None
 
 
 def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
