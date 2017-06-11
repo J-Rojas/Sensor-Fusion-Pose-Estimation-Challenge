@@ -14,6 +14,7 @@ import tensorflow as tf
 from model import build_model, load_model
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
+import keras.backend as K
 
 def precision(y_true, y_pred):
     """Precision metric.
@@ -79,7 +80,7 @@ def main():
         if args.weightsFile != "":
             weightsFile = args.weightsFile
         model = load_model(args.modelFile, weightsFile,
-                           INPUT_SHAPE,
+                           INPUT_SHAPE, NUM_CLASSES,
                            obj_to_bkg_ratio=population_statistics_train[
                                                 'positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
                            avg_obj_size=population_statistics_train['average_area'],

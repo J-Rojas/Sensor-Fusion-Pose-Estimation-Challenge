@@ -6,6 +6,7 @@ import numpy as np
 from numpy import random
 import cv2
 import keras
+import json
 from keras import backend as K
 import tensorflow as tf
 import globals
@@ -135,13 +136,13 @@ def build_model(input_shape, num_classes,
     return model
 
 
-def load_model(model_file, weights_file, input_shape,
+def load_model(model_file, weights_file, input_shape, num_classes,
                obj_to_bkg_ratio=0.00016,
                avg_obj_size=1000,
                metrics=None):
     with open(model_file, 'r') as jfile:
         print("reading existing model and weights")
-        model = keras.models.model_from_json(jfile.loads(jfile.read()))
+        model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
         model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
                       loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
