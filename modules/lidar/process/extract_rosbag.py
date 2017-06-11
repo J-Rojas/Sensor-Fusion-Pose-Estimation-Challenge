@@ -8,10 +8,14 @@ import os
 import matplotlib.image as mpimg
 import sensor_msgs.point_cloud2
 import csv
+import cv2
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
 from extract_rosbag_lidar import save_lidar_2d_images
+from rectify_image import extract_calib_info
+from rectify_image import initUndistortRectifyMap
+from rectify_image import remap
 from common.birds_eye_view_generator import generate_birds_eye_view
 from common.interpolate import TrackletInterpolater
 
@@ -26,7 +30,8 @@ class ROSBagExtractor:
                  cmap=None,
                  output_dir=None,
                  display=False,
-                 pickle=False):
+                 pickle=False,
+                 yaml_path=None):
         self.windows = {}
         self.bridge = CvBridge()
         self.window_max_width = window_max_width
@@ -39,6 +44,7 @@ class ROSBagExtractor:
         self.lidar_timestamps=[]
         self.camera_timestamps = []
         self.radar_tracks = []
+        self.yaml_path = yaml_path
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -50,9 +56,22 @@ class ROSBagExtractor:
             if not (os.path.isdir(self.output_dir + '/radar/')):
                 os.makedirs(self.output_dir + '/radar/')
 
+        self.mapx, self.mapy, self.new_size = None, None, None
+        if self.yaml_path is None:
+            print('yaml_path is not provided. So the output images will not be rectified')
+        elif not os.path.isfile(self.yaml_path):
+            print('yaml_path ' + self.yaml_path + ' does not exist. So the output images will not be rectified')
+        else:
+            calibration_info = extract_calib_info(self.yaml_path)
+            self.mapx, self.mapy, self.new_size = initUndistortRectifyMap(calibration_info)
+        
+
     @staticmethod
-    def save_image(output_dir, name, count, image):
-        mpimg.imsave('{}/{}_{}.png'.format(output_dir, name, count), image)
+    def save_image(output_dir, name, count, image, mapx = None, mapy = None, new_size = None):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if mapx is not None:
+            image = remap(image,mapx,mapy,new_size)
+        cv2.imwrite('{}/{}_{}.png'.format(output_dir, name, count), image)
 
     @staticmethod
     def print_msg(msgType, topic, msg, time, startsec):
@@ -135,8 +154,8 @@ class ROSBagExtractor:
             elif 'right' in topic:
                 name = 'right'
 
-            #if self.output_dir is not None:
-            #    self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img)
+            if self.output_dir is not None:
+                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img, self.mapx, self.mapy, self.new_size)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
@@ -217,8 +236,8 @@ def main():
     appTitle = "Udacity Team-SF: ROSbag viewer"
     parser = argparse.ArgumentParser(description=appTitle)
     parser.add_argument('bag_file', type=str, help='ROS Bag name')
-    parser.add_argument('metadata', type=str, help='Metadata file')
-    parser.add_argument('--skip', type=int, default="0", help='skip seconds')
+    parser.add_argument('--skip', type=float, default="0", help='skip seconds')
+    parser.add_argument('--length', type=float, default=None, help='length seconds')
     parser.add_argument('--display', dest='display', action='store_true', help='Display output')
     parser.add_argument('--topics', type=str, default=None, help='Topic list to display')
     parser.add_argument('--topdown_res', type=float, default=2, help='Topdown image fidelity (meters/pixel)')
@@ -228,6 +247,7 @@ def main():
     parser.add_argument('--outdir', type=str, default=None, help='Output directory for images')
     parser.add_argument('--quiet', dest='quiet', action='store_true', help='Quiet mode')
     parser.add_argument('--interpolate', type=str, dest='interpolate', help='Interpolate with tracklet file')
+    parser.add_argument('--camera_calibration', type=str, default=None,  help='Yaml for camera image rectification')
     parser.set_defaults(quiet=False, display=False)
 
     args = parser.parse_args()
@@ -244,6 +264,7 @@ def main():
         sys.exit()
 
     skip = args.skip
+    length = args.length
     startsec = 0
     last_topic_time = {}
     maximum_gap_topic = {}
@@ -254,7 +275,8 @@ def main():
                                 topdown_res=args.topdown_res,
                                 topdown_max_range=args.topdown_max_range,
                                 pickle=args.pickle,
-                                display=args.display)
+                                display=args.display,
+                                yaml_path=args.camera_calibration)
 
     print("reading rosbag ", bag_file)
     bag = rosbag.Bag(bag_file, 'r')
@@ -273,6 +295,9 @@ def main():
                 print("skipping to ", skip, " from ", startsec, " ...")
         else:
             if t.to_sec() > skipping:
+
+                if length is not None and t.to_sec() > skipping + length:
+                    break
 
                 if last_topic_time.get(topic) != None:
                     gap = t.to_sec() - last_topic_time[topic]
