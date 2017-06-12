@@ -31,9 +31,10 @@ class CameraModel:
 
         translation = [translation_data[0], translation_data[1], translation_data[2], 1.0]
         rotation_data = calib_data['euler_rotations']['data']
+        euler_axes = calib_data['euler_axes']
 
         # euler_matrix( roll, pitch, yaw )
-        rotationMatrix = tf.transformations.euler_matrix(rotation_data[2], rotation_data[1], rotation_data[0])
+        rotationMatrix = tf.transformations.euler_matrix(rotation_data[2], rotation_data[1], rotation_data[0], euler_axes)
         rotationMatrix[:, 3] = translation
 
         self.camera_model.fromCameraInfo(cam_info)
@@ -50,14 +51,25 @@ class CameraModel:
         return uv
 
 
-def generateImage(camera, centroid, inputFile, outputFile):
+def generateImage(camera, points, inputFile, outputFile):
     import cv2
 
     image = cv2.imread(inputFile)
 
-    uvs = camera.project_lidar_points_to_camera_2d([centroid])
+    uvs = camera.project_lidar_points_to_camera_2d(points)
 
-    cv2.circle(image, (int(uvs[0][0]), int(uvs[0][1])), 5, cv2.cv.Scalar(0, 0, 255), thickness=-1)
+    pos = 0
+    for uv in uvs:
+        color = None
+        if pos == 0:
+            color = cv2.cv.Scalar(255, 0, 0)
+        elif 0 < pos < 5:
+            color = cv2.cv.Scalar(0, 255, 0)
+        else:
+            color = cv2.cv.Scalar(0, 0, 255)
+
+        cv2.circle(image, (int(uv[0]), int(uv[1])), 5, color, thickness=-1)
+        pos += 1
 
     cv2.imwrite(outputFile, image)
 
@@ -125,9 +137,31 @@ def main():
     cleaned = tracket_parser.clean_items_list(dataDict)
     tracket_parser.put_timestamps_with_frame_ids(cleaned, timestamps)
 
+    tracklets = dataDict.get('tracklets', {})
+    target_item = tracklets.get('item', {})
+    w = float(target_item.get('w', 0))
+    h = float(target_item.get('h', 0))
+    l = float(target_item.get('l', 0))
+
     for item in cleaned:
         ts = item['timestamp']
-        generateImage(camera, [item['tx'], item['ty'], item['tz'], 1.0],
+        tx = item['tx']
+        ty = item['ty']
+        tz = item['tz']
+        bbox = []
+        centroid = [tx, ty, tz, 1.0]
+
+        bbox.append(centroid)
+        bbox.append([tx - l / 2., ty + w / 2., tz + h / 2., 1.0])
+        bbox.append([tx - l / 2., ty - w / 2., tz + h / 2., 1.0])
+        bbox.append([tx + l / 2., ty + w / 2., tz + h / 2., 1.0])
+        bbox.append([tx + l / 2., ty - w / 2., tz + h / 2., 1.0])
+        bbox.append([tx + l / 2., ty - w / 2., tz - h / 2., 1.0])
+        bbox.append([tx - l / 2., ty + w / 2., tz - h / 2., 1.0])
+        bbox.append([tx - l / 2., ty - w / 2., tz - h / 2., 1.0])
+        bbox.append([tx + l / 2., ty + w / 2., tz - h / 2., 1.0])
+
+        generateImage(camera, bbox,
                       '{}/image_{}.png'.format(input_dir, ts),
                       '{}/image_{}.png'.format(output_dir, ts))
 
