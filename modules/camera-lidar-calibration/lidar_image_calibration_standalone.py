@@ -30,7 +30,7 @@ def costFunction( x, sign = 1.0, debug = False ):
 	translation = [ parameters[ 0 ], parameters[ 1 ], parameters[ 2 ], 1.0 ]
 
 	# euler_matrix( roll, pitch, yaw )
-	rotationMatrix = tf.transformations.euler_matrix( parameters[ 5 ], parameters[ 4 ], parameters[ 3 ] )
+	rotationMatrix = tf.transformations.euler_matrix( parameters[ 5 ], parameters[ 4 ], parameters[ 3 ], axes=settings['axes'] )
 
 	if debug:
 		print( translation )
@@ -101,7 +101,7 @@ def generateImage( parameters ):
 	translation = [ parameters[ 0 ], parameters[ 1 ], parameters[ 2 ], 1.0 ]
 
 	# euler_matrix( roll, pitch, yaw )
-	rotationMatrix = tf.transformations.euler_matrix( parameters[ 5 ], parameters[ 4 ], parameters[ 3 ] )
+	rotationMatrix = tf.transformations.euler_matrix( parameters[ 5 ], parameters[ 4 ], parameters[ 3 ], axes=settings['axes'] )
 	rotationMatrix[ :, 3 ] = translation
 
 	for i in range( 0, len( settings[ 'points' ] ) ):
