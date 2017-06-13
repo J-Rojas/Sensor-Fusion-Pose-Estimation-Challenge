@@ -84,11 +84,14 @@ def build_model(input_shape, num_classes,
     # set channels last format
     K.set_image_data_format('channels_last')
 
-    inputs = Input(shape=input_shape, name='input')
-    flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
-    normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
-    unflatten_input = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
-    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(unflatten_input)
+    post_normalized = inputs = Input(shape=input_shape, name='input')
+    if globals.USE_SAMPLE_WISE_BATCH_NORMALIZATION:
+        flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
+        normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
+        post_normalized = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
+    if globals.USE_FEATURE_WISE_BATCH_NORMALIZATION:
+        post_normalized = BatchNormalization(name='normalize', axis=-1)(post_normalized)
+    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(post_normalized)
     conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
