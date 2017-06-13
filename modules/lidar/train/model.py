@@ -221,7 +221,7 @@ def load_model(model_file, weights_file, input_shape, num_classes,
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
         model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
-                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size, weight_bb),
+                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
 
     return model
