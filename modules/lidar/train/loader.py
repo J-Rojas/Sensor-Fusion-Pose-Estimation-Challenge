@@ -12,8 +12,9 @@ import globals
 from common.csv_utils import foreach_dirset
 from random import randrange
 from collections import defaultdict
-from encoder import generate_label, get_label_bounds
-
+from encoder import generate_label, get_label_bounds, generate_camera_label
+import cv2
+from cv_bridge import CvBridge
 
 def usage():
     print('Loads training data with ground truths and generate training batches')
@@ -82,7 +83,10 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 # read in images/ground truths batch by batch
 #
-def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
+def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, 
+        BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, 
+        data_source, camera_model, randomize=True, augment=True):
+        
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -90,8 +94,16 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
     obsw = obs_size[1]
     obsh = obs_size[2]
 
-    images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
-    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
+    if data_source == "lidar":
+        images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+        obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
+    elif data_source == "camera":
+        images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+        obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
+    else:
+        print "invalid data source type"
+        exit(1)
+   
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
 
@@ -100,15 +112,21 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
     while 1:
 
         indicies = generate_index_list(indicies_list, randomize, num_batches, BATCH_SIZE)
+        ind = 0
 
         for batch in range(num_batches):
 
             batch_indicies = indicies[batch * BATCH_SIZE:batch * BATCH_SIZE + BATCH_SIZE]
 
-            load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
+            load_data(batch_indicies, images, pickle_dir_and_prefix, data_source, NUM_CHANNELS)
             load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
-                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
-            if augment:
+                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES), 
+                            data_source, camera_model)
+            
+            ind += 1                
+            cv2.imwrite(str(indicies[ind]) + "_test_img.jpg", images[0])
+            cv2.imwrite(str(indicies[ind]) + "_test_label.jpg",(np.reshape(obj_labels[0], (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES)))[:,:,0])              
+            if augment and data_source == "lidar":
                 batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
             yield (images, obj_labels)
@@ -163,8 +181,36 @@ def load_lidar_data(indicies, images, pickle_dir_and_prefix):
 
         batch_index += 1
 
+def load_camera_data(indicies, images, pickle_dir_and_prefix, num_channels):
 
-def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
+    batch_index = 0
+    
+    #read_mode = cv2.IMREAD_UNCHANGED
+    if num_channels == 3:
+        read_mode = cv2.IMREAD_COLOR
+    elif num_channels == 1:
+        read_mode = cv2.IMREAD_GRAYSCALE
+
+    for ind in indicies:
+
+        fname = pickle_dir_and_prefix[ind] + "_image.png"
+        img = cv2.imread(fname, read_mode)
+        img_arr = np.expand_dims(np.asarray(img, dtype='float32'), 2)
+        np.copyto(images[batch_index], img_arr)
+
+        batch_index += 1
+
+def load_data(indicies, images, pickle_dir_and_prefix, data_source, num_channels):
+
+    if data_source == "lidar":
+        load_lidar_data(indicies, images, pickle_dir_and_prefix)
+    elif data_source == "camera":
+        load_camera_data(indicies, images, pickle_dir_and_prefix, num_channels)
+    else:
+        print "invalid data source"
+        exit(1)
+
+def load_lidar_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
 
     batch_index = 0
 
@@ -175,6 +221,31 @@ def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
         batch_index += 1
+
+def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, 
+                           shape, camera_model):
+
+    batch_index = 0
+
+    for ind in indicies:
+
+        label = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
+        # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
+        np.copyto(obj_labels[batch_index], np.uint8(label))
+
+        batch_index += 1
+
+def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, 
+                    data_source, camera_model):
+
+    if data_source == "lidar":
+        load_lidar_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape)
+    elif data_source == "camera":
+        load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, 
+                               shape, camera_model)
+    else:
+        print "invalid data source"
+        exit(1)
 
 
 def get_data(csv_sources, parent_dir):
@@ -216,7 +287,7 @@ def get_data(csv_sources, parent_dir):
 #
 # read input csv file to get the list of directories
 #
-def get_data_and_ground_truth(csv_sources, parent_dir):
+def get_data_and_ground_truth(csv_sources, parent_dir, data_source):
 
     txl = []
     tyl = []
@@ -229,9 +300,15 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
 
     def process(dirset):
 
-        interp_lidar_fname = dirset.dir+"/obs_poses_interp_transform.csv"
+        if data_source == 'lidar':
+            timestamp_truth_fname = dirset.dir+"/obs_poses_interp_transform.csv"
+        elif data_source == 'camera':
+            timestamp_truth_fname = dirset.dir+"/obs_poses_camera.csv"
+        else:
+            print "invalid data source type"
+            assert(0)
 
-        with open(interp_lidar_fname) as csvfile_2:
+        with open(timestamp_truth_fname) as csvfile_2:
             readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
 
             for row2 in readCSV_2:
@@ -240,7 +317,7 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
                 ty = row2['ty']
                 tz = row2['tz']
 
-                pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, ts)
+                pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, data_source, ts)
                 pickle_dir_and_prefix.append(pickle_dir_prefix)
                 txl.append(float(tx))
                 tyl.append(float(ty))
@@ -256,8 +333,11 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
     return obs_centroid, pickle_dir_and_prefix, obs_size
 
 
-def file_prefix_for_timestamp(parent_dir, ts=None):
-    return parent_dir + "/lidar_360/" + (ts if ts is not None else '')
+def file_prefix_for_timestamp(parent_dir, data_source, ts=None):
+    if data_source == "lidar":
+        return parent_dir + "/lidar_360/" + (ts if ts is not None else '')
+    elif data_source == "camera":
+        return parent_dir + "/camera/" + (ts if ts is not None else '')
 
 # ***** main loop *****
 if __name__ == "__main__":

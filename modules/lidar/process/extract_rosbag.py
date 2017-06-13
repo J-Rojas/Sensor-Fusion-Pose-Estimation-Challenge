@@ -9,6 +9,7 @@ import matplotlib.image as mpimg
 import sensor_msgs.point_cloud2
 import csv
 import cv2
+import globals
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
@@ -71,7 +72,7 @@ class ROSBagExtractor:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         if mapx is not None:
             image = remap(image,mapx,mapy,new_size)
-        cv2.imwrite('{}/{}_{}.png'.format(output_dir, name, count), image)
+        cv2.imwrite('{}/{}_{}.png'.format(output_dir, count, name), image[globals.CAM_IMG_REMOVE_TOP:,:,:])
 
     @staticmethod
     def print_msg(msgType, topic, msg, time, startsec):
@@ -323,7 +324,7 @@ def main():
         print('interpolating...')
 
         interpolater = TrackletInterpolater()
-        lidar_ground_truth = interpolater.interpolate_from_tracklet(
+        lidar_ground_truth, camera_ground_truth = interpolater.interpolate_from_tracklet(
             args.interpolate,
             extractor.camera_timestamps,
             extractor.lidar_timestamps
@@ -335,6 +336,13 @@ def main():
 
             writer.writeheader()
             writer.writerows(lidar_ground_truth)
+
+        with open(output_dir + '/obs_poses_camera.csv', 'w') as csvfile:
+
+            writer = csv.DictWriter(csvfile, ['timestamp', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz'], extrasaction='ignore', delimiter=',', restval='', )
+
+            writer.writeheader()
+            writer.writerows(camera_ground_truth)
 
     #Load pickle:
     #input

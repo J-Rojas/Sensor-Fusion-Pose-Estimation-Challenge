@@ -11,3 +11,5 @@ X_MIN = -360.0 / RES[1] / 2
 Y_MIN = VFOV[0] / RES[0]
 X_MAX = int(360.0 / RES[1])
 Y_MAX = int(abs(VFOV[0] - VFOV[1]) / RES[0])
+
+CAM_IMG_REMOVE_TOP = 572
