@@ -195,16 +195,17 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
 
     sorted_corners = uv_bbox[indices]
     sorted_corners = uv_bbox[-4:]
+    #print sorted_corners
 
-    upper_left_x = sorted_corners.min(axis=0)[1]
-    upper_left_y = sorted_corners.min(axis=0)[0] - CAM_IMG_REMOVE_TOP
-    lower_right_x = sorted_corners.max(axis=0)[1]
-    lower_right_y = sorted_corners.max(axis=0)[0] - CAM_IMG_REMOVE_TOP
-
-    #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+    upper_left_y = sorted_corners.min(axis=0)[1] - CAM_IMG_REMOVE_TOP
+    upper_left_x = sorted_corners.min(axis=0)[0] 
+    lower_right_y = sorted_corners.max(axis=0)[1] - CAM_IMG_REMOVE_TOP
+    lower_right_x = sorted_corners.max(axis=0)[0] 
 
     label = np.zeros(INPUT_SHAPE[:2])
     label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
+    #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
+
     y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
 
     return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
@@ -325,7 +326,6 @@ def main():
                     outfile = os.path.join(output_dir, f.split(".")[0] + '_bb.png')
                     draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
 
-
     elif data_source == "camera":
        if camera_model_file == "":
             print "need to enter camera calibration yaml"
@@ -346,8 +346,8 @@ def main():
             print('missing obs_poses_camera.csv')
             sys.exit()
             
-       obs_df = pd.read_csv(obs_file, index_col=['timestamp'])    
-       #print(obs_df)
+       obs_df_cam = pd.read_csv(obs_file, index_col=['timestamp'])    
+       #print(obs_df_cam)
 
 
        cam_img_dir = os.listdir(os.path.join(input_dir, 'camera'))
@@ -357,10 +357,10 @@ def main():
             if f.endswith('_image.png'):
                 ts = int(f.split('_')[0])
 
-                if ts in list(obs_df.index):
-                    tx = obs_df.loc[ts]['tx']
-                    ty = obs_df.loc[ts]['ty']
-                    tz = obs_df.loc[ts]['tz']
+                if ts in list(obs_df_cam.index):
+                    tx = obs_df_cam.loc[ts]['tx']
+                    ty = obs_df_cam.loc[ts]['ty']
+                    tz = obs_df_cam.loc[ts]['tz']
                     infile = os.path.join(input_dir, 'camera', f)
                     outfile = os.path.join(output_dir, f.split(".")[0] + '_cam_bb.png')
                     y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
@@ -369,14 +369,14 @@ def main():
                     img = cv2.imread(infile)
                     if 0 < upper_left_x < image_width and 0< upper_left_y < image_height and  \
                         0 < lower_right_x < image_width and 0< lower_right_y < image_height:
-                        print img.shape
-                        print tx, ty, tz
-                        print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
-                        cv2.rectangle(img, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), (0, 255, 0), 10)
+                        #print img.shape
+                        #print tx, ty, tz
+                        #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+                        #print y.shape
+                        cv2.rectangle(img, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), (0, 255, 0), 5)
                         cv2.imwrite(outfile, img)
-                        exit(0)
-       
-
+                        y = y*255
+                        cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
 
 
 if __name__ == '__main__':
