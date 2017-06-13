@@ -112,7 +112,6 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix,
     while 1:
 
         indicies = generate_index_list(indicies_list, randomize, num_batches, BATCH_SIZE)
-        ind = 0
 
         for batch in range(num_batches):
 
@@ -122,10 +121,7 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix,
             load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
                             (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES), 
                             data_source, camera_model)
-            
-            ind += 1                
-            cv2.imwrite(str(indicies[ind]) + "_test_img.jpg", images[0])
-            cv2.imwrite(str(indicies[ind]) + "_test_label.jpg",(np.reshape(obj_labels[0], (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES)))[:,:,0])              
+                       
             if augment and data_source == "lidar":
                 batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
@@ -229,7 +225,7 @@ def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
 
     for ind in indicies:
 
-        label = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
+        label, _, _ = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
         # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
