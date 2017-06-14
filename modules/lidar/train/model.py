@@ -144,6 +144,7 @@ def load_model(model_file, weights_file, input_shape, num_classes,
                avg_obj_size=1000,
                metrics=None):
     with open(model_file, 'r') as jfile:
+        print('Loading weights file {}'.format(weights_file))
         print("reading existing model and weights")
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
