@@ -106,11 +106,14 @@ def build_lidar_model(input_shape, num_classes,
     # set channels last format
     K.set_image_data_format('channels_last')
 
-    inputs = Input(shape=input_shape, name='input')
-    flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
-    normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
-    unflatten_input = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
-    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(unflatten_input)
+    post_normalized = inputs = Input(shape=input_shape, name='input')
+    if globals.USE_SAMPLE_WISE_BATCH_NORMALIZATION:
+        flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
+        normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
+        post_normalized = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
+    if globals.USE_FEATURE_WISE_BATCH_NORMALIZATION:
+        post_normalized = BatchNormalization(name='normalize', axis=-1)(post_normalized)
+    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(post_normalized)
     conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
@@ -222,6 +225,7 @@ def load_model(model_file, weights_file, input_shape, num_classes,
                avg_obj_size=1000,
                metrics=None):
     with open(model_file, 'r') as jfile:
+        print('Loading weights file {}'.format(weights_file))
         print("reading existing model and weights")
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
