@@ -73,30 +73,7 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
     
     return custom_loss
 
-
 def build_model(input_shape, num_classes, data_source,
-                use_regression=False,
-                obj_to_bkg_ratio=0.00016,
-                avg_obj_size=1000,
-                metrics=None,
-                trainable=True):
-
-    if data_source == "lidar":
-        model = build_lidar_model(input_shape, num_classes,
-                use_regression, obj_to_bkg_ratio, avg_obj_size,
-                metrics, trainable)    
-    elif data_source == "camera":
-        model = build_camera_model(input_shape, num_classes,
-                use_regression, obj_to_bkg_ratio, avg_obj_size,
-                metrics, trainable)
-    else:
-        print "undefined data source type"
-        exit(1)
-            
-    print(model.summary())    
-    return model
-
-def build_lidar_model(input_shape, num_classes,
                 use_regression=False,
                 obj_to_bkg_ratio=0.00016,
                 avg_obj_size=1000,
@@ -128,7 +105,15 @@ def build_lidar_model(input_shape, num_classes,
     # classification task
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
-    deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
+                               
+    if data_source == "lidar":                           
+        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
+    elif data_source == "camera":
+        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv5a)
+    else:
+        print "invalid data source"
+        exit(1)
+            
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
@@ -158,67 +143,9 @@ def build_lidar_model(input_shape, num_classes,
                       metrics=metrics)
         
 
+    print(model.summary())
     return model
 
-def build_camera_model(input_shape, num_classes,
-                use_regression=False,
-                obj_to_bkg_ratio=0.00016,
-                avg_obj_size=1000,
-                metrics=None,
-                trainable=True):
-
-    # set channels last format
-    K.set_image_data_format('channels_last')
-
-    inputs = Input(shape=input_shape, name='input')
-    flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
-    normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
-    unflatten_input = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
-    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(unflatten_input)
-    conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
-    conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(conv1)
-    conv3 = Conv2D(12, 5, strides=(2,2), activation='relu', name='conv3',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(conv2)
-    deconv4 = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv4',
-                              kernel_initializer='random_uniform', bias_initializer='zeros')(conv3)
-    deconv4_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv4)
-    concat_deconv4 = concatenate([conv2, deconv4_padded], name='concat_deconv4')
-
-    # classification task
-    deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
-                               kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
-    deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv5a)
-    concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
-    deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
-                               kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
-    deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
-
-    # regression task
-    if use_regression:
-        deconv5b = Conv2DTranspose(24, 5, strides=(2,2), activation='relu', name='deconv5b',
-                                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
-        concat_deconv5b = concatenate([conv1, deconv5b], name='concat_deconv5b')
-        deconv6b = Conv2DTranspose(24, 5, strides=(2,4), activation='relu', name='deconv6b',
-                                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5b)
-
-        # TODO: the output layer may need reshaping
-        model = Model(inputs=inputs, outputs=[deconv6a, deconv6b])
-        model.trainable = trainable
-        model.compile(optimizer=Adam(lr=0.001), 
-                      loss={'deconv6a': 'categorical_crossentropy', 'deconv6b': 'mse'}, 
-                      metrics={'deconv6a': 'accuracy', 'deconv6b': 'mse'})
-    else:
-        flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
-        softmax = Activation('softmax',name='softmax')(flatten)
-        softmax_clipped = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='clip_epsilon')(softmax)
-        model = Model(inputs=inputs, outputs=softmax_clipped)
-        model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
-                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
-                      metrics=metrics)
-          
-    return model
     
 def load_model(model_file, weights_file, input_shape, num_classes,
                obj_to_bkg_ratio=0.00016,
