@@ -9,7 +9,8 @@ import argparse
 import math
 import json
 import cv2
-from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD, CAM_IMG_REMOVE_TOP
+import csv
+from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD, CAM_IMG_TOP
 from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
 from keras.utils import to_categorical
 from common.camera_model import CameraModel
@@ -164,8 +165,7 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
 
 def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
 
-    bbox = []
-    
+    bbox = []    
     bbox.append([tx-l/2., ty+w/2., tz+h/2., 1.])
     bbox.append([tx-l/2., ty+w/2., tz-h/2., 1.])
     bbox.append([tx-l/2., ty-w/2., tz+h/2., 1.])
@@ -197,10 +197,19 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
     sorted_corners = uv_bbox[-4:]
     #print sorted_corners
 
-    upper_left_y = sorted_corners.min(axis=0)[1] - CAM_IMG_REMOVE_TOP
+    upper_left_y = sorted_corners.min(axis=0)[1] - CAM_IMG_TOP
     upper_left_x = sorted_corners.min(axis=0)[0] 
-    lower_right_y = sorted_corners.max(axis=0)[1] - CAM_IMG_REMOVE_TOP
+    lower_right_y = sorted_corners.max(axis=0)[1] - CAM_IMG_TOP
     lower_right_x = sorted_corners.max(axis=0)[0] 
+    
+    x_margin = (lower_right_x-upper_left_x)/2
+    y_margin = (lower_right_y-upper_left_y)/2
+    
+    upper_left_y -= y_margin
+    upper_left_x -= x_margin
+    lower_right_y += y_margin
+    lower_right_x += x_margin
+    
 
     label = np.zeros(INPUT_SHAPE[:2])
     label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
@@ -283,6 +292,7 @@ def main():
     parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
     parser.add_argument('--camera_model', type=str, help='Camera calibration yaml')
     parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
+    parser.add_argument('--metadata', type=str, help='path/filename to metadata.csv')
 
     args = parser.parse_args()
     input_dir = args.input_dir
@@ -291,6 +301,7 @@ def main():
     data_source = args.data_source
     camera_model_file = args.camera_model
     lidar2cam_model_file = args.lidar2cam_model
+    metadata_fname = args.metadata
 
     if not os.path.isdir(input_dir) or not os.path.isdir(output_dir):
         print('input_dir or output_dir does not exist')
@@ -327,12 +338,27 @@ def main():
                     draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
 
     elif data_source == "camera":
-       if camera_model_file == "":
+       if not camera_model_file:
             print "need to enter camera calibration yaml"
             exit(1)
-       if lidar2cam_model_file == "":
+       if not lidar2cam_model_file:
             print "need to enter lidar to camera calibration yaml"
+            exit(1)               
+       if not metadata_fname:
+            print "need to enter metadata.csv file path/name"
             exit(1)
+            
+       with open(metadata_fname) as metafile:
+            records = csv.DictReader(metafile)
+            mdr = []
+            for record in records:
+                mdr.append(record)
+            
+            print mdr[0]
+            l = float(mdr[0]['l'])
+            w = float(mdr[0]['w'])
+            h = float(mdr[0]['h'])
+                    
        image_width = IMG_CAM_WIDTH
        image_height = IMG_CAM_HEIGHT
        input_shape = (IMG_CAM_HEIGHT, IMG_CAM_WIDTH, NUM_CAM_CHANNELS)  
@@ -351,7 +377,6 @@ def main():
 
 
        cam_img_dir = os.listdir(os.path.join(input_dir, 'camera'))
-       l, w, h = (4.2418, 1.4478, 1.5748)
 
        for f in cam_img_dir:
             if f.endswith('_image.png'):
@@ -375,8 +400,8 @@ def main():
                         #print y.shape
                         cv2.rectangle(img, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), (0, 255, 0), 5)
                         cv2.imwrite(outfile, img)
-                        y = y*255
-                        cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
+                        #y = y*255
+                        #cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
 
 
 if __name__ == '__main__':
