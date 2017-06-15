@@ -72,7 +72,7 @@ class ROSBagExtractor:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         if mapx is not None:
             image = remap(image,mapx,mapy,new_size)
-        cv2.imwrite('{}/{}_{}.png'.format(output_dir, count, name), image[globals.CAM_IMG_REMOVE_TOP:,:,:])
+        cv2.imwrite('{}/{}_{}.png'.format(output_dir, count, name), image[globals.CAM_IMG_TOP:globals.CAM_IMG_BOTTOM,:,:])
 
     @staticmethod
     def print_msg(msgType, topic, msg, time, startsec):
