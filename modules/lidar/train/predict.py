@@ -16,7 +16,7 @@ from process.globals import X_MIN, Y_MIN, RES, RES_RAD, LIDAR_MIN_HEIGHT
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
-from model import build_model
+import model as model_module
 from process.extract_rosbag_lidar import generate_lidar_2d_front_view
 
 from keras.models import model_from_json
@@ -156,14 +156,13 @@ def write_prediction_data_to_csv(centroids, timestamps, output_file):
     for centroid, ts in zip(centroids, timestamps):
         writer.writerow({'timestamp': ts, 'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
 
-def load_model(weightsFile):
-    model = build_model(
-        INPUT_SHAPE,
-        NUM_CLASSES,
-        trainable=False
-    )
-
-    print("reading existing weights")
+def load_model(modelFile, weightsFile):
+    defaultWeightsFile = modelFile.replace('json', 'h5')
+    if weightsFile != "":
+        defaultWeightsFile = weightsFile
+    model = model_module.load_model(modelFile, defaultWeightsFile,
+                       INPUT_SHAPE, NUM_CLASSES)
+    model.trainable = False
     model.load_weights(weightsFile)
     
     return model
@@ -301,8 +300,9 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
         
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
-    parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
+    parser.add_argument('modelFile', type=str, default="", help='Model Filename')
     parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction or rosbag file name")
+    parser.add_argument('--weightsFile', type=str, default="", help='Model Weights Filename')
     parser.add_argument('--data_type', type=str, default="frontview", help='Data source for prediction: frontview, or rosbag')    
     parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
@@ -320,7 +320,7 @@ def main():
     print('predicting from ' + data_type)    
     
     # load model with weights
-    model = load_model(args.weightsFile)    
+    model = load_model(args.modelFile, args.weightsFile)
         
     if data_type == 'frontview':
         xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir)        
