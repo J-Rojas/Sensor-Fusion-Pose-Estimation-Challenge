@@ -15,6 +15,9 @@ from model import build_model, load_model
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 import keras.backend as K
+import matplotlib.pyplot as plt
+
+
 
 def precision(y_true, y_pred):
     """Precision metric.
@@ -67,6 +70,15 @@ class LossHistory(Callback):
         self.val_losses.append(logs.get('val_loss'))
         self.val_precisions.append(logs.get('val_precision'))
         self.val_recalls.append(logs.get('val_recall'))
+
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
+        self.precisions.append(logs.get('precision'))
+        self.recalls.append(logs.get('recall'))
+        self.val_losses.append(logs.get('val_loss'))
+        self.val_precisions.append(logs.get('val_precision'))
+        self.val_recalls.append(logs.get('val_recall'))
+
 
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
@@ -151,11 +163,68 @@ def main():
 
     print("stop time:")
     print(datetime.datetime.now())
-
-    # TODO: save recall and precision plot
-
     # save model weights
     model.save_weights(os.path.join(outdir, "lidar_model.h5"), True)
+
+    #print precision_recall_array
+    plot_precision_recall_curve(loss_history.precisions,loss_history.recalls,outdir)
+
+
+def plot_filtered_PR_curve(outdir,data_filename, maxgap=0.03):
+    fname = '{0}/{1}'.format(outdir,data_filename)#precision_recall_value_100epoch
+    df = pd.read_csv(fname,header=None,names=['precision','recall'])
+    df['recall_grp'] = (df['recall']/maxgap).astype(int)*maxgap
+
+    aggregation = {'recall':{
+                             'mean_recall':'mean'
+                             },
+                   'precision':{ 'max_precision' : lambda x: max(x),
+                                 'min_precision': lambda x: min(x),
+                                 'mean_precision': 'mean'
+                                 }}
+
+    grouped_recall_with_precision = df.groupby('recall_grp').agg(aggregation)
+    plt.clf()
+    plt.plot(grouped_recall_with_precision[('recall', 'mean_recall')],
+             grouped_recall_with_precision[('precision', 'max_precision')], lw=2, color='teal', label='Max Precision')
+    plt.plot(grouped_recall_with_precision[('recall', 'mean_recall')],
+             grouped_recall_with_precision[('precision', 'mean_precision')], lw=2, color='cornflowerblue',label='Mean Precision')
+    plt.plot(grouped_recall_with_precision[('recall', 'mean_recall')],
+             grouped_recall_with_precision[('precision', 'min_precision')], lw=2, color='turquoise', label='Min Precision')
+
+    plt.xlabel('recall')
+    plt.ylabel('precision')
+    plt.ylim([0.0, 1.05])
+    plt.xlim([0.0, 1.0])
+    plt.title('Filtered Precision-Recall Curve, filterGap={0}'.format(maxgap))
+    plt.legend(loc="upper right")
+    fname = '{0}/precision_recall_curve_filtered.png'.format(outdir)
+    plt.savefig(fname)
+    print 'Filtered Precision-Recall Curve saved at ' + fname
+
+def plot_precision_recall_curve(precision_arr, recall_arr,outdir):
+
+    print 'Ploting Precision-Recall Curve...'
+    data = np.array(zip(precision_arr, recall_arr), dtype=[('precision', float), ('recall', float)])
+    data_filename = 'precision_recall_value.csv'
+    np.savetxt('{0}/{1}'.format(outdir,data_filename), data, delimiter=",")
+    # Plot Precision-Recall curve
+    plt.clf()
+    plt.plot(data['recall'], data['precision'], lw=2, color='navy', label='Precision-Recall curve')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.ylim([0.0, 1.05])
+    plt.xlim([0.0, 1.0])
+    plt.title('Precision-Recall Curve')
+    plt.legend(loc="upper right")
+
+    fname = '{0}/precision_recall_curve.png'.format(outdir)
+    plt.savefig(fname)
+    print 'Precision-Recall Curve saved at '+ fname
+    #plt.show()
+
+    plot_filtered_PR_curve(outdir, data_filename)
+
 
 if __name__ == '__main__':
     main()
