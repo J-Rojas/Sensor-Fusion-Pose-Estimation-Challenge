@@ -225,7 +225,7 @@ def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
 
     for ind in indicies:
 
-        label, _, _ = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
+        label, _, _, _, _, _ = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
         # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
