@@ -163,7 +163,7 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
 
     return y
 
-def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
+def generate_camera_bb(tx, ty, tz, l, w, h, camera_model):
 
     bbox = []    
     bbox.append([tx-l/2., ty+w/2., tz+h/2., 1.])
@@ -176,10 +176,7 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
     bbox.append([tx+l/2., ty-w/2., tz-h/2., 1.])
     uv_bbox = camera_model.project_lidar_points_to_camera_2d(bbox)
     uv_bbox = np.asarray(uv_bbox, dtype='int')
-    
-    #print bbox
-    #print uv_bbox
-    
+ 
     centroid = []
     centroid.append([tx, ty, tz, 1.])
     uv_centroid = camera_model.project_lidar_points_to_camera_2d(centroid)
@@ -191,33 +188,70 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model):
 
     d = np.asarray(d, dtype='int')
     indices = np.argsort(d)
-    indices = np.asarray(indices, dtype='int')
-
     sorted_corners = uv_bbox[indices]
-    sorted_corners = uv_bbox[-4:]
-    #print sorted_corners
-
-    upper_left_y = sorted_corners.min(axis=0)[1] - CAM_IMG_TOP
-    upper_left_x = sorted_corners.min(axis=0)[0] 
-    lower_right_y = sorted_corners.max(axis=0)[1] - CAM_IMG_TOP
-    lower_right_x = sorted_corners.max(axis=0)[0] 
+    sorted_corners[:,1] = sorted_corners[:,1] - CAM_IMG_TOP
+    uv_centroid[:,1] = uv_centroid[:,1] - CAM_IMG_TOP
+    return sorted_corners, uv_centroid
     
-    x_margin = (lower_right_x-upper_left_x)/2
-    y_margin = (lower_right_y-upper_left_y)/2
-    
-    upper_left_y -= y_margin
-    upper_left_x -= x_margin
-    lower_right_y += y_margin
-    lower_right_x += x_margin
-    
+def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model, method='outer_rect'):
 
-    label = np.zeros(INPUT_SHAPE[:2])
-    label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
-    #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
+    uv_bbox_sorted, uv_centroid = generate_camera_bb(tx, ty, tz, l, w, h, camera_model)
+    r = 0
+        
+    if method == 'circle':
+        uv_bbox = uv_bbox_sorted[:4]
+        upper_left_y = uv_bbox.min(axis=0)[1]
+        upper_left_x = uv_bbox.min(axis=0)[0] 
+        lower_right_y = uv_bbox.max(axis=0)[1]
+        lower_right_x = uv_bbox.max(axis=0)[0] 
+        width = (lower_right_x - upper_left_x)
+        height = (lower_right_y - upper_left_y)
+        
+        r = min(width, height)
+        center_point_x = upper_left_x + width / 2
+        center_point_y = upper_left_y + height / 2
+        
+        upper_left_x = center_point_x - r / 2
+        upper_left_y = center_point_y - r / 2
+        lower_right_x = center_point_x + r / 2
+        lower_right_y = center_point_y + r / 2
+        
+        label = np.zeros(INPUT_SHAPE[:2])
+        for x in range(upper_left_x, lower_right_x, 1):
+            for y in range(upper_left_y, lower_right_y, 1):
+                if distance((uv_centroid[0][0], uv_centroid[0][1]), (x, y)) <= r:
+                    label[y, x] = 1
+         #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
+    else:      
+        if method == 'inner_rect':
+            uv_bbox = uv_bbox_sorted[:4]     
+        elif method == 'outer_rect':
+            uv_bbox = uv_bbox_sorted[-4:]   
+                              
+        upper_left_y = uv_bbox.min(axis=0)[1]
+        upper_left_x = uv_bbox.min(axis=0)[0] 
+        lower_right_y = uv_bbox.max(axis=0)[1]
+        lower_right_x = uv_bbox.max(axis=0)[0] 
+        width = (lower_right_x - upper_left_x)
+        height = (lower_right_y - upper_left_y)
+        
+        x_margin = width/4
+        y_margin = height/4
+        #print x_margin, y_margin
+        
+        upper_left_y -= y_margin
+        upper_left_x -= x_margin
+        lower_right_y += y_margin
+        lower_right_x += x_margin
+        
+        label = np.zeros(INPUT_SHAPE[:2])
+        label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
+        #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
 
-    y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
+    y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle  
+      
+    return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox_sorted, uv_centroid, r
 
-    return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
     
 def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
     centroid = project_2d(tx, ty, tz)
@@ -388,20 +422,29 @@ def main():
                     tz = obs_df_cam.loc[ts]['tz']
                     infile = os.path.join(input_dir, 'camera', f)
                     outfile = os.path.join(output_dir, f.split(".")[0] + '_cam_bb.png')
-                    y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
-                            generate_camera_label(tx, ty, tz, l, w, h, (image_height, image_width), camera_model)
+                    y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox, uv_centroid, r = \
+                            generate_camera_label(tx, ty, tz, l, w, h, (image_height, image_width), camera_model, shape)
                     
                     img = cv2.imread(infile)
-                    if 0 < upper_left_x < image_width and 0< upper_left_y < image_height and  \
-                        0 < lower_right_x < image_width and 0< lower_right_y < image_height:
+                    #if 0 < upper_left_x < image_width and 0< upper_left_y < image_height and  \
+                    #    0 < lower_right_x < image_width and 0< lower_right_y < image_height:
                         #print img.shape
                         #print tx, ty, tz
                         #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
                         #print y.shape
+                    for p in uv_bbox:
+                        cv2.circle(img, (p[0], p[1]), 2, (0, 0, 255), thickness=-1)
+                    cv2.circle(img, (uv_centroid[0][0], uv_centroid[0][1]), 2, (255, 0, 255), thickness=-1) 
+                     
+                    if shape == "circle":  
+                        cv2.circle(img, (uv_centroid[0][0], uv_centroid[0][1]), int(r), (0, 255, 255), thickness=2) 
+                    else:  
                         cv2.rectangle(img, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), (0, 255, 0), 5)
-                        cv2.imwrite(outfile, img)
-                        #y = y*255
-                        #cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
+                    
+                    
+                    cv2.imwrite(outfile, img)
+                    #y = y*255
+                    #cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
 
 
 if __name__ == '__main__':
