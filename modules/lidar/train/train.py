@@ -7,13 +7,12 @@ import keras.backend as K
 import tensorflow as tf
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 
-from common import pr_curve_plotter
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
     NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
 from model import build_model, load_model
 from pretrain import calculate_population_weights
-
+from common import pr_curve_plotter
 
 def precision(y_true, y_pred):
     """Precision metric.
