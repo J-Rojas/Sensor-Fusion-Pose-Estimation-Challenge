@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 import h5py
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
-                    NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT
+                    NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS, \
+                    EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT
 from pretrain import calculate_population_weights
 
 import tensorflow as tf
@@ -25,9 +26,12 @@ def precision(y_true, y_pred):
 
     #y_pred = tf.Print(y_pred, ["preds", y_pred])
     #y_true = tf.Print(y_true, ["labels", y_true])
+    
+    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
 
-    labels_bkg, labels_frg = tf.split(y_true, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred, 2, 2)
+    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
 
     true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
     predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
@@ -42,8 +46,11 @@ def recall(y_true, y_pred):
     how many relevant items are selected.
     """
 
-    labels_bkg, labels_frg = tf.split(y_true, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred, 2, 2)
+    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+
+    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
 
     true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
     possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
