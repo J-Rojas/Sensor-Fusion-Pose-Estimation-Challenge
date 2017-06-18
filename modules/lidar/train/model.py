@@ -26,11 +26,15 @@ USE_W2 = True
 def custom_weighted_loss(input_shape, obj_to_bkg_ratio=0.00016, avg_obj_size=1000, loss_scaler=1000, weight_bb=1.0):
 
     def custom_loss(y_true, y_pred):
-        #y_true = tf.Print(y_true, ['y_true:', tf.shape(y_true)])
+        y_true = tf.Print(y_true, ['y_true:', tf.shape(y_true)])
+        y_pred = tf.Print(y_pred, ['y_pred:', tf.shape(y_pred)])
         y_true_obj = y_true[:, :, 0:2]
         y_pred_obj = y_pred[:, :, 0:2]        
         y_true_bb = y_true[:, :, 2:]
         y_pred_bb = y_pred[:, :, 2:] 
+        
+        #y_true_obj, y_true_bb = tf.split(y_true, [2, 24], 2)
+        #y_pred_obj, y_pred_bb = tf.split(y_pred, [2, 24], 2)
         
         # the code here is only executed once, since these should all be graph operations. Do not expect Numpy
         # calculations or the like to work here, only Keras backend and tensor flow nodes.
@@ -141,7 +145,7 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
 
     
 def build_model(input_shape, num_classes,
-                use_regression=False,
+                use_regression=True,
                 obj_to_bkg_ratio=0.00016,
                 avg_obj_size=1000,
                 weight_bb=1.0,
@@ -175,13 +179,12 @@ def build_model(input_shape, num_classes,
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
     deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    deconv6a_flatten = Reshape((-1, num_classes), name='deconv6a_flatten')(deconv6a_crop)
+    softmax = Activation('softmax',name='softmax')(deconv6a_flatten)
+    output = classification_output = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='classification_output')(softmax)
 
     # regression task
-    if use_regression:
-        deconv6a_flatten = Reshape((-1, num_classes), name='deconv6a_flatten')(deconv6a_crop)
-        softmax = Activation('softmax',name='softmax')(deconv6a_flatten)
-        classification_output = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='classification_output')(softmax) 
-        
+    if use_regression:        
         deconv5b = Conv2DTranspose(24, 5, strides=(2,2), activation='relu', name='deconv5b',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
         deconv5b_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5b)
@@ -192,21 +195,13 @@ def build_model(input_shape, num_classes,
         regression_output = Reshape((-1, 24), name='regression_output')(deconv6b_crop)
         
         # concatenate two outputs into one so that we can have one loss function       
-        outputs = concatenate([classification_output, regression_output], name='outputs')        
-        model = Model(inputs=inputs, outputs=outputs)
+        output = concatenate([classification_output, regression_output], name='outputs')        
+ 
+    model = Model(inputs=inputs, outputs=output)
+    model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
+                  loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
+                  metrics=metrics)
        
-        model.compile(optimizer=Adam(lr=globals.LEARNING_RATE), 
-                      loss=custom_weighted_loss(input_shape, obj_to_bkg_ratio, avg_obj_size, weight_bb),                            
-                      metrics=metrics)                     
-    else:
-        flatten = Reshape((-1, num_classes), name='flatten')(deconv6a_crop)
-        softmax = Activation('softmax',name='softmax')(flatten)
-        softmax_clipped = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='clip_epsilon')(softmax)
-        model = Model(inputs=inputs, outputs=softmax_clipped)
-        model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
-                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
-                      metrics=metrics)
-        
     print(model.summary())    
     return model
 
