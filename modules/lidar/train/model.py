@@ -185,14 +185,14 @@ def build_model(input_shape, num_classes,
 
     # regression task
     if use_regression:        
-        deconv5b = Conv2DTranspose(24, 5, strides=(2,2), activation='relu', name='deconv5b',
+        deconv5b = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv5b',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
         deconv5b_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5b)
         concat_deconv5b = concatenate([conv1, deconv5b_padded], name='concat_deconv5b')
-        deconv6b = Conv2DTranspose(24, 5, strides=(2,4), activation='relu', name='deconv6b',
+        deconv6b = Conv2DTranspose(16, 5, strides=(2,4), activation='relu', name='deconv6b',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5b)
         deconv6b_crop = Cropping2D(cropping=((3, 0), (0, 4)))(deconv6b)
-        regression_output = Reshape((-1, 24), name='regression_output')(deconv6b_crop)
+        regression_output = Reshape((-1, 16), name='regression_output')(deconv6b_crop)
         
         # concatenate two outputs into one so that we can have one loss function       
         output = concatenate([classification_output, regression_output], name='outputs')        
