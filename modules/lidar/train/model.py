@@ -26,15 +26,11 @@ USE_W2 = True
 def custom_weighted_loss(input_shape, obj_to_bkg_ratio=0.00016, avg_obj_size=1000, loss_scaler=1000, weight_bb=1.0):
 
     def custom_loss(y_true, y_pred):
-        y_true = tf.Print(y_true, ['y_true:', tf.shape(y_true)])
-        y_pred = tf.Print(y_pred, ['y_pred:', tf.shape(y_pred)])
-        y_true_obj = y_true[:, :, 0:2]
-        y_pred_obj = y_pred[:, :, 0:2]        
-        y_true_bb = y_true[:, :, 2:]
-        y_pred_bb = y_pred[:, :, 2:] 
+        #y_true = tf.Print(y_true, ['y_true:', tf.shape(y_true)])
+        #y_pred = tf.Print(y_pred, ['y_pred:', tf.shape(y_pred)])
         
-        #y_true_obj, y_true_bb = tf.split(y_true, [2, 24], 2)
-        #y_pred_obj, y_pred_bb = tf.split(y_pred, [2, 24], 2)
+        y_true_obj, y_true_bb = tf.split(y_true, [globals.NUM_CLASSES, globals.NUM_REGRESSION_OUTPUTS], 2)
+        y_pred_obj, y_pred_bb = tf.split(y_pred, [globals.NUM_CLASSES, globals.NUM_REGRESSION_OUTPUTS], 2)
         
         # the code here is only executed once, since these should all be graph operations. Do not expect Numpy
         # calculations or the like to work here, only Keras backend and tensor flow nodes.
@@ -185,21 +181,21 @@ def build_model(input_shape, num_classes,
 
     # regression task
     if use_regression:        
-        deconv5b = Conv2DTranspose(16, 5, strides=(2,2), activation='relu', name='deconv5b',
+        deconv5b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(2,2), activation='relu', name='deconv5b',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
         deconv5b_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5b)
         concat_deconv5b = concatenate([conv1, deconv5b_padded], name='concat_deconv5b')
-        deconv6b = Conv2DTranspose(16, 5, strides=(2,4), activation='relu', name='deconv6b',
+        deconv6b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(2,4), activation='relu', name='deconv6b',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5b)
         deconv6b_crop = Cropping2D(cropping=((3, 0), (0, 4)))(deconv6b)
-        regression_output = Reshape((-1, 16), name='regression_output')(deconv6b_crop)
+        regression_output = Reshape((-1, globals.NUM_REGRESSION_OUTPUTS), name='regression_output')(deconv6b_crop)
         
         # concatenate two outputs into one so that we can have one loss function       
         output = concatenate([classification_output, regression_output], name='outputs')        
  
     model = Model(inputs=inputs, outputs=output)
     model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
-                  loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
+                  loss=custom_weighted_loss(input_shape, obj_to_bkg_ratio, avg_obj_size),
                   metrics=metrics)
        
     print(model.summary())    
@@ -216,7 +212,7 @@ def load_model(model_file, weights_file, input_shape, num_classes,
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
         model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),
-                      loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
+                      loss=custom_weighted_loss(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
 
     return model
