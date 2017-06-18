@@ -1,5 +1,6 @@
 import tf
 import yaml
+import numpy as np
 from image_geometry import PinholeCameraModel
 from sensor_msgs.msg import CameraInfo
 
@@ -9,7 +10,7 @@ class CameraModel:
         self.camera_model = PinholeCameraModel()
         self.matrix = None
 
-    def load_camera_calibration(self, camera_calibration_yaml, lidar_camera_calibration_yaml):
+    def load_camera_calibration(self, camera_calibration_yaml, lidar_camera_calibration_yaml=None):
 
         stream = file(camera_calibration_yaml, 'r')
         calib_data = yaml.load(stream)
@@ -23,22 +24,24 @@ class CameraModel:
         cam_info.distortion_model = calib_data['distortion_model']
         stream.close()
 
-        stream = file(lidar_camera_calibration_yaml, 'r')
-        calib_data = yaml.load(stream)
-        translation_data = calib_data['translation']['data']
-
-        print(translation_data)
-
-        translation = [translation_data[0], translation_data[1], translation_data[2], 1.0]
-        rotation_data = calib_data['euler_rotations']['data']
-        euler_axes = calib_data['euler_axes']
-
-        # euler_matrix( roll, pitch, yaw )
-        rotationMatrix = tf.transformations.euler_matrix(rotation_data[2], rotation_data[1], rotation_data[0], euler_axes)
-        rotationMatrix[:, 3] = translation
-
         self.camera_model.fromCameraInfo(cam_info)
-        self.matrix = rotationMatrix
+
+        if lidar_camera_calibration_yaml is not None:
+            stream = file(lidar_camera_calibration_yaml, 'r')
+            calib_data = yaml.load(stream)
+            translation_data = calib_data['translation']['data']
+
+            print(translation_data)
+
+            translation = [translation_data[0], translation_data[1], translation_data[2], 1.0]
+            rotation_data = calib_data['euler_rotations']['data']
+            euler_axes = calib_data['euler_axes']
+
+            # euler_matrix( roll, pitch, yaw )
+            rotationMatrix = tf.transformations.euler_matrix(rotation_data[2], rotation_data[1], rotation_data[0], euler_axes)
+            rotationMatrix[:, 3] = translation
+            self.matrix = rotationMatrix
+
 
     def project_lidar_points_to_camera_2d(self, points):
 
@@ -49,6 +52,13 @@ class CameraModel:
             uv.append(self.camera_model.project3dToPixel(rotatedPoint))
 
         return uv
+
+    def rectify_image(self, raw):
+
+        img = np.zeros_like(raw)
+        self.camera_model.rectifyImage(raw, img)
+
+        return img
 
 
 def generateImage(camera, points, inputFile, outputFile):
