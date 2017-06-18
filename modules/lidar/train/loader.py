@@ -40,9 +40,11 @@ def data_random_rotate(image, label, obj_center, obj_size):
         rotate_by = randrange(0, globals.IMG_WIDTH)
     
     #print "rotate_by: " + str(rotate_by)
-    label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CLASSES))
+    label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, \
+                                globals.NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS))
     rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
-    rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, globals.NUM_CLASSES))
+    rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, \
+                                       globals.NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS))
     rotated_img = np.roll(image, rotate_by, axis=1)
     
     # copy back rotated parts to original images/label
@@ -91,7 +93,7 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
     obsh = obs_size[2]
 
     images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
-    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
+    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS), dtype=np.uint8)
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
 
