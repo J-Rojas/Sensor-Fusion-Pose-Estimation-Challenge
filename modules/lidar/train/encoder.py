@@ -156,8 +156,21 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
         label = np.zeros(INPUT_SHAPE[:2])
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
+        y = y.astype('float')
 
-    return y
+
+    # groud truths for regression part.. encode bounding box corners projected into 2D
+    bbox = get_bb(tx, ty, tz, l, w, h)
+    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], 16), dtype='float')
+    for ind, values in enumerate(bbox):
+        gt_regression[:, :, 2*ind] = values[0]*label[:,:]
+        gt_regression[:, :, 2*ind+1] = values[1]*label[:,:]
+
+    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], 16))
+
+    labels_concat = np.concatenate((y, gt_regression), axis=1) 
+    #return y
+    return labels_concat
 
 
 def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
