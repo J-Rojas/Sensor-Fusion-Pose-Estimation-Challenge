@@ -9,6 +9,7 @@ import argparse
 import math
 import json
 import cv2
+import globals
 from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD
 from keras.utils import to_categorical
 
@@ -159,14 +160,24 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
         y = y.astype('float')
 
 
-    # groud truths for regression part.. encode bounding box corners projected into 2D
-    bbox = get_bb(tx, ty, tz, l, w, h)
-    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], 16), dtype='float')
+    # groud truths for regression part.. encode bounding box corners in 3D
+    bbox = []
+    bbox.append((tx-l/2., ty+w/2., tz+h/2.))
+    bbox.append((tx-l/2., ty+w/2., tz-h/2.))
+    bbox.append((tx-l/2., ty-w/2., tz+h/2.))
+    bbox.append((tx-l/2., ty-w/2., tz-h/2.))
+    bbox.append((tx+l/2., ty+w/2., tz+h/2.))
+    bbox.append((tx+l/2., ty+w/2., tz-h/2.))
+    bbox.append((tx+l/2., ty-w/2., tz+h/2.))
+    bbox.append((tx+l/2., ty-w/2., tz-h/2.))
+    
+    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS), dtype='float')
     for ind, values in enumerate(bbox):
-        gt_regression[:, :, 2*ind] = values[0]*label[:,:]
-        gt_regression[:, :, 2*ind+1] = values[1]*label[:,:]
+        gt_regression[:, :, 3*ind] = values[0]*label[:,:]
+        gt_regression[:, :, 3*ind+1] = values[1]*label[:,:]
+        gt_regression[:, :, 3*ind+2] = values[2]*label[:,:]
 
-    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], 16))
+    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS))
 
     labels_concat = np.concatenate((y, gt_regression), axis=1) 
     #return y
