@@ -86,12 +86,17 @@ def main():
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
     parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
+    parser.add_argument('--cache', dest='cache', action='store_true', help='Cache data')
+    parser.set_defaults(cache=False)
 
     args = parser.parse_args()
     train_file = args.train_file
     validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
+    cache = None
+    if args.cache:
+        cache = {'data': None, 'labels': None}
 
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
@@ -143,12 +148,14 @@ def main():
         model.fit_generator(
             data_generator_train(
                 train_data[0], train_data[2], train_data[1],
-                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
+                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                cache=cache
             ),  # generator
             n_batches_per_epoch_train,  # number of batches per epoch
             validation_data=data_generator_train(
                 val_data[0], val_data[2], val_data[1],
-                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES
+                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                cache=cache
             ),
             validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
             epochs=EPOCHS,
