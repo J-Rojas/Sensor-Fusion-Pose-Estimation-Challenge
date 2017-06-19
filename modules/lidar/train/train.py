@@ -86,17 +86,17 @@ def main():
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
     parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
-    parser.add_argument('--cache', dest='cache', action='store_true', help='Cache data')
-    parser.set_defaults(cache=False)
+    parser.add_argument('--cache', type=str, default=None, help='Cache data')
 
     args = parser.parse_args()
     train_file = args.train_file
     validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
-    cache = None
-    if args.cache:
-        cache = {'data': None, 'labels': None}
+    cache_train, cache_val = None, None
+    if args.cache is not None:
+        cache_train = {'data': None, 'labels': None}
+        cache_val = {'data': None, 'labels': None}
 
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
@@ -145,23 +145,47 @@ def main():
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), write_graph=True, write_images=False)
     loss_history = LossHistory()
     try:
-        model.fit_generator(
-            data_generator_train(
+        if args.cache is None or args.cache == 'generate':
+            model.fit_generator(
+                data_generator_train(
+                    train_data[0], train_data[2], train_data[1],
+                    BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                    cache=cache_train
+                ),  # generator
+                n_batches_per_epoch_train,  # number of batches per epoch
+                validation_data=data_generator_train(
+                    val_data[0], val_data[2], val_data[1],
+                    BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                    cache=cache_val
+                ),
+                validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
+                epochs=EPOCHS,
+                callbacks=[checkpointer, tensorboard, loss_history],
+                verbose=1
+            )
+        elif args.cache == 'shuffle':
+            # load all batches at once
+            next(data_generator_train(
                 train_data[0], train_data[2], train_data[1],
-                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
-                cache=cache
-            ),  # generator
-            n_batches_per_epoch_train,  # number of batches per epoch
-            validation_data=data_generator_train(
+                len(train_data[0][0]), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                cache=cache_train
+            ))
+            next(data_generator_train(
                 val_data[0], val_data[2], val_data[1],
-                BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
-                cache=cache
-            ),
-            validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
-            epochs=EPOCHS,
-            callbacks=[checkpointer, tensorboard, loss_history],
-            verbose=1
-        )
+                len(val_data[0][0]), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES,
+                cache=cache_val
+            ))
+
+            print(len(cache_train['data']), len(cache_train['labels']))
+            model.fit(cache_train['data'], cache_train['labels'],
+                      batch_size=BATCH_SIZE,
+                      epochs=EPOCHS,
+                      verbose=1,
+                      callbacks=[checkpointer, tensorboard, loss_history],
+                      validation_data=(cache_val['data'], cache_val['labels']),
+                      shuffle=True)
+
+
     except KeyboardInterrupt:
         print('\n\nExiting training...')
 
