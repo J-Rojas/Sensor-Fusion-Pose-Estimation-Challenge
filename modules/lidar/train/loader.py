@@ -191,7 +191,10 @@ def load_camera_data(indicies, images, pickle_dir_and_prefix, num_channels):
 
         fname = pickle_dir_and_prefix[ind] + "_image.png"
         img = cv2.imread(fname, read_mode)
-        img_arr = np.expand_dims(np.asarray(img, dtype='float32'), 2)
+        #cv2.imwrite(str(ind)+"_grayimg.png", img)
+   
+        img_arr = np.expand_dims(np.asarray(img, dtype='float64'), 2)
+        #img_arr = img_arr/255.0 - 0.5
         np.copyto(images[batch_index], img_arr)
 
         batch_index += 1
@@ -213,7 +216,6 @@ def load_lidar_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, sh
     for ind in indicies:
 
         label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape)
-        # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
         batch_index += 1
@@ -226,7 +228,6 @@ def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
     for ind in indicies:
 
         label, _, _, _, _, _ = generate_camera_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, camera_model)
-        # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
         batch_index += 1

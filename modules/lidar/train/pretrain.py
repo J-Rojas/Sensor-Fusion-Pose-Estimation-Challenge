@@ -2,18 +2,25 @@ import sys
 sys.path.append('../')
 import cv2
 import numpy as np
-from encoder import generate_label
-from common.csv_utils import foreach_dirset, load_lidar_interp
+from encoder import generate_label, generate_camera_label
+from common.csv_utils import foreach_dirset, load_data_interp
 
-def calculate_sample_statistics(input_shape, lidar_gt, metadata):
+def calculate_sample_statistics(input_shape, gt, metadata, data_source, camera_model):
 
     # generate label
-    tx, ty, tz = np.float64(lidar_gt['tx']), np.float64(lidar_gt['ty']), np.float64(lidar_gt['tz'])
+    tx, ty, tz = np.float64(gt['tx']), np.float64(gt['ty']), np.float64(gt['tz'])
     l, w, h = np.float64(metadata['l']), np.float64(metadata['w']), np.float64(metadata['h'])
-    label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,1].flatten()
-
+    if data_source == "lidar":
+        label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,1].flatten()
+    elif data_source == "camera":
+        label, _, _, _, _, _ = generate_camera_label(tx, ty, tz, l, w, h, input_shape, camera_model)
+        label = label[:,1].flatten()
+   
     # determine positive samples
+    cnt = 1
     positive = len(np.where(label == 1)[0])
+    if positive == 0:
+        cnt = 0
 
     # determine # of samples
     total_samples = input_shape[0] * input_shape[1]
@@ -21,23 +28,24 @@ def calculate_sample_statistics(input_shape, lidar_gt, metadata):
     #print("positive = ", positive, ", total = ", total_samples)
 
     # assuming only one object per lidar frame, area == positive
-    return {'positive': positive, 'total': total_samples, 'area': positive, 'count': 1}
+    return {'positive': positive, 'total': total_samples, 'area': positive, 'count': cnt}
 
-def calculate_population_weights(input_csv_file, dir_prefix, input_shape):
+def calculate_population_weights(input_csv_file, dir_prefix, input_shape, data_source, camera_model):
 
     # cannot update variables with pass-by-value within closure, so use a dict to hold values by reference
     totals = {'positive': 0, 'samples': 0, 'area': 0, 'count': 0}
 
     def process(dirset):
-        #load the ground truth for all lidar frames
-        lidar_coord = load_lidar_interp(dirset.dir)
-
-        for lidar_gt in lidar_coord:
-            stats = calculate_sample_statistics(input_shape, lidar_gt, dirset.mdr)
-            totals['positive'] += stats['positive']
-            totals['samples'] += stats['total']
-            totals['area'] += stats['area']
-            totals['count'] += stats['count']
+        #load the ground truth for all lidar or camera frames
+        data_coord = load_data_interp(dirset.dir, data_source)
+ 
+        for data_gt in data_coord:
+            stats = calculate_sample_statistics(input_shape, data_gt, dirset.mdr, data_source, camera_model)
+            if stats['count'] == 1:
+                totals['positive'] += stats['positive']
+                totals['samples'] += stats['total']
+                totals['area'] += stats['area']
+                totals['count'] += stats['count']
 
         print(totals)
 

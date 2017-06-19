@@ -160,7 +160,7 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
         label = np.zeros(INPUT_SHAPE[:2])
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
-
+    
     return y
 
 def generate_camera_bb(tx, ty, tz, l, w, h, camera_model):
@@ -246,10 +246,10 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model, method
         
         label = np.zeros(INPUT_SHAPE[:2])
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
-        #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
 
     y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle  
-      
+    #print np.sum(y[:,0]) , np.sum(y[:,1]), y.shape, np.sum(y[:,0])+np.sum(y[:,1])
+    
     return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox_sorted, uv_centroid, r
 
     

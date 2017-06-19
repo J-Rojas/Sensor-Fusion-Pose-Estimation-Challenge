@@ -107,15 +107,13 @@ def main():
         print "invalid data source type"
         exit(1)
         
-     
-       
-        
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
-    population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
+    population_statistics_train = calculate_population_weights(train_file, dir_prefix, \
+                                    (image_height, image_width), data_source, camera_model)
     print("Train statistics: ", population_statistics_train)
 
-    metrics = [recall, precision]
+    metrics = [recall, precision, 'accuracy']
 
     if args.modelFile != "":
         weightsFile = args.modelFile.replace('json', 'h5')
@@ -153,8 +151,10 @@ def main():
     print("start time:")
     print(datetime.datetime.now())
 
-    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'), verbose=1, save_weights_only=True)
-    tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), write_graph=True, write_images=False)
+    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'), \
+                   verbose=1, save_weights_only=True)
+    tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), \
+                  write_graph=True, write_images=False)
     model.fit_generator(
         data_generator_train(
             train_data[0], train_data[2], train_data[1],
