@@ -109,7 +109,7 @@ def build_model(input_shape, num_classes, data_source,
     if data_source == "lidar":                           
         deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
     elif data_source == "camera":
-        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv5a)
+        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
     else:
         print "invalid data source"
         exit(1)
@@ -117,7 +117,13 @@ def build_model(input_shape, num_classes, data_source,
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
-    deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    if data_source == "lidar":
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    elif data_source == "camera":                          
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 4)))(deconv6a)
+    else:
+        print "invalid data source"
+        exit(1)
 
     # regression task
     if use_regression:
