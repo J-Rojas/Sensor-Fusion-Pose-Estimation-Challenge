@@ -106,13 +106,7 @@ def build_model(input_shape, num_classes, data_source,
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
                                
-    if data_source == "lidar":                           
-        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
-    elif data_source == "camera":
-        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
-    else:
-        print "invalid data source"
-        exit(1)
+    deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
             
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
