@@ -73,8 +73,7 @@ def custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio=0.00016, avg_obj
     
     return custom_loss
 
-
-def build_model(input_shape, num_classes,
+def build_model(input_shape, num_classes, data_source,
                 use_regression=False,
                 obj_to_bkg_ratio=0.00016,
                 avg_obj_size=1000,
@@ -106,11 +105,19 @@ def build_model(input_shape, num_classes,
     # classification task
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
+                               
     deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
+            
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
-    deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    if data_source == "lidar":
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    elif data_source == "camera":                          
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 4)))(deconv6a)
+    else:
+        print "invalid data source"
+        exit(1)
 
     # regression task
     if use_regression:
@@ -135,10 +142,11 @@ def build_model(input_shape, num_classes,
                       loss=custom_weighted_cross_entropy(input_shape, obj_to_bkg_ratio, avg_obj_size),
                       metrics=metrics)
         
-    print(model.summary())    
+
+    print(model.summary())
     return model
 
-
+    
 def load_model(model_file, weights_file, input_shape, num_classes,
                obj_to_bkg_ratio=0.00016,
                avg_obj_size=1000,

@@ -26,14 +26,21 @@ def foreach_dirset(input_csv_file, dir_prefix, doFunc):
 
             doFunc(dirset)
 
-def load_lidar_interp(dir):
+def load_data_interp(dir, data_source):
 
-    lidar_coord = []
-    interp_lidar_fname = dir+"/obs_poses_interp_transform.csv"
-    with open(interp_lidar_fname, 'r') as f:
+    obs_coord = []
+    if data_source == "lidar":
+        data_fname = dir+"/obs_poses_interp_transform.csv"
+    elif data_source == "camera":
+        data_fname = dir+"/obs_poses_camera.csv"
+    else:
+        print "invalid data source type"
+        exit(1)
+        
+    with open(data_fname, 'r') as f:
         reader = csv.DictReader(f)
-        # load lidar transformations
+        # load lidar/camera transformations
         for row in reader:
-            lidar_coord.append(row)
+            obs_coord.append(row)
 
-    return lidar_coord
+    return obs_coord

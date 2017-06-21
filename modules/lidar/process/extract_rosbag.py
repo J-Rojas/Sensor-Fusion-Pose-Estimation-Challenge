@@ -9,6 +9,8 @@ import matplotlib.image as mpimg
 import sensor_msgs.point_cloud2
 import csv
 import cv2
+import globals
+import common.camera_model
 from cv_bridge import CvBridge
 
 from extract_rosbag_lidar import generate_lidar_2d_front_view
@@ -45,6 +47,7 @@ class ROSBagExtractor:
         self.camera_timestamps = []
         self.radar_tracks = []
         self.yaml_path = yaml_path
+        self.camera_model = None
 
         if output_dir is not None:
             if not(os.path.isdir(self.output_dir + '/lidar_360/')):
@@ -56,22 +59,21 @@ class ROSBagExtractor:
             if not (os.path.isdir(self.output_dir + '/radar/')):
                 os.makedirs(self.output_dir + '/radar/')
 
-        self.mapx, self.mapy, self.new_size = None, None, None
         if self.yaml_path is None:
             print('yaml_path is not provided. So the output images will not be rectified')
         elif not os.path.isfile(self.yaml_path):
             print('yaml_path ' + self.yaml_path + ' does not exist. So the output images will not be rectified')
         else:
-            calibration_info = extract_calib_info(self.yaml_path)
-            self.mapx, self.mapy, self.new_size = initUndistortRectifyMap(calibration_info)
+            self.camera_model = common.camera_model.CameraModel()
+            self.camera_model.load_camera_calibration(self.yaml_path)
         
 
     @staticmethod
-    def save_image(output_dir, name, count, image, mapx = None, mapy = None, new_size = None):
+    def save_image(output_dir, name, count, image, camera_model=None):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        if mapx is not None:
-            image = remap(image,mapx,mapy,new_size)
-        cv2.imwrite('{}/{}_{}.png'.format(output_dir, name, count), image)
+        if camera_model is not None:
+            image = camera_model.rectify_image(image)
+        cv2.imwrite('{}/{}_{}.png'.format(output_dir, count, name), image[globals.CAM_IMG_TOP:globals.CAM_IMG_BOTTOM,:,:])
 
     @staticmethod
     def print_msg(msgType, topic, msg, time, startsec):
@@ -155,7 +157,7 @@ class ROSBagExtractor:
                 name = 'right'
 
             if self.output_dir is not None:
-                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img, self.mapx, self.mapy, self.new_size)
+                self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img, self.camera_model)
 
         elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
 
@@ -323,7 +325,7 @@ def main():
         print('interpolating...')
 
         interpolater = TrackletInterpolater()
-        lidar_ground_truth = interpolater.interpolate_from_tracklet(
+        lidar_ground_truth, camera_ground_truth = interpolater.interpolate_from_tracklet(
             args.interpolate,
             extractor.camera_timestamps,
             extractor.lidar_timestamps
@@ -335,6 +337,13 @@ def main():
 
             writer.writeheader()
             writer.writerows(lidar_ground_truth)
+
+        with open(output_dir + '/obs_poses_camera.csv', 'w') as csvfile:
+
+            writer = csv.DictWriter(csvfile, ['timestamp', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz'], extrasaction='ignore', delimiter=',', restval='', )
+
+            writer.writeheader()
+            writer.writerows(camera_ground_truth)
 
     #Load pickle:
     #input
