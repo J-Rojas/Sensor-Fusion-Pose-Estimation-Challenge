@@ -25,7 +25,7 @@ MIN_PROB = 0.5 #lowest probability to participate in heatmap
 MIN_BBOX_AREA = 100 #minimum area of the bounding box to be declared a car
 MIN_HEAT = 2 #lowest number of heat allowed
 
-def find_obstacle(y_pred, input_shape):
+def find_obstacle(y_pred, input_shape, use_regression):
     y_label = y_pred[:,1].flatten()      
     pred = np.reshape(y_label, input_shape[:2])
     ones = np.where(pred >= MIN_PROB)
@@ -156,10 +156,11 @@ def write_prediction_data_to_csv(centroids, timestamps, output_file):
     for centroid, ts in zip(centroids, timestamps):
         writer.writerow({'timestamp': ts, 'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
 
-def load_model(weightsFile):
+def load_model(weightsFile, use_regression):
     model = build_model(
         INPUT_SHAPE,
         NUM_CLASSES,
+        use_regression,
         trainable=False
     )
 
@@ -169,7 +170,7 @@ def load_model(weightsFile):
     return model
     
 # return prection from a numpy array of point cloud        
-def predict_point_cloud(model, points, cmap=None):
+def predict_point_cloud(model, points, cmap=None, use_regression=True):
     points_2d = generate_lidar_2d_front_view(points, cmap=cmap)    
             
     input = np.ndarray(shape=(IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
@@ -180,7 +181,7 @@ def predict_point_cloud(model, points, cmap=None):
     model_input = np.asarray([input])
 
     prediction = model.predict(model_input)
-    centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE)
+    centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE, use_regression)
     if centroid is None:
         centroid = (0, 0)
         bbox = (0, 0, 0, 0)
@@ -195,7 +196,7 @@ def predict_point_cloud(model, points, cmap=None):
     return centroid_3d
 
 # return predictions from rosbag
-def predict_rosbag(model, predict_file):
+def predict_rosbag(model, predict_file, use_regression=True):
     bag = rosbag.Bag(predict_file, "r")        
     xyz_pred = []
     timestamps = []
@@ -204,14 +205,14 @@ def predict_rosbag(model, predict_file):
         points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
         points = np.array(list(points))
                 
-        pred = predict_point_cloud(model, points)
+        pred = predict_point_cloud(model, points, use_regression)
         xyz_pred.append(pred)
         timestamps.append(t)
     
     return xyz_pred, timestamps       
   
 # return predictions from lidar 2d frontviews  
-def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir):        
+def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir, use_regression=True):        
     # load data
     predict_data = get_data(predict_file, dir_prefix)
 
@@ -259,7 +260,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
         # generate output - white pixels for car pixels
         image = obj_pixels.astype(np.uint8) * 255
                              
-        centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE)       
+        centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE, use_regression)       
 
         timestamps.append(os.path.basename(file_prefix).split('_')[0])
 
@@ -303,6 +304,7 @@ def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
     parser.add_argument('weightsFile', type=str, default="", help='Model Filename')
     parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction or rosbag file name")
+    parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
     parser.add_argument('--data_type', type=str, default="frontview", help='Data source for prediction: frontview, or rosbag')    
     parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
@@ -314,18 +316,21 @@ def main():
     data_type = args.data_type
     predict_file = args.predict_file
     dir_prefix = args.dir_prefix
+    data_source = args.data_source    
+    use_regression = True if data_source == "lidar" else False
+    print('data_source={} use_regression={}'.format(data_source, use_regression))
     
     if data_type is None or not data_type == 'rosbag':
         data_type = 'frontview'
     print('predicting from ' + data_type)    
     
     # load model with weights
-    model = load_model(args.weightsFile)    
+    model = load_model(args.weightsFile, use_regression)    
         
     if data_type == 'frontview':
-        xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir)        
+        xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir, use_regression)        
     else:
-        xyz_pred, timestamps = predict_rosbag(model, predict_file)
+        xyz_pred, timestamps = predict_rosbag(model, predict_file, use_regression)
 
     if output_dir is not None:
         file_prefix = output_dir + "/"

@@ -153,12 +153,12 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
         elif method == 'outer_rect':
             (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_outer_rect(tx, ty, tz, l, w, h)
         #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
-
+        
         label = np.zeros(INPUT_SHAPE[:2])
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
         y = y.astype('float')
-
+        
 
     # groud truths for regression part.. encode bounding box corners in 3D
     bbox = []
@@ -170,15 +170,14 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
     bbox.append((tx+l/2., ty+w/2., tz-h/2.))
     bbox.append((tx+l/2., ty-w/2., tz+h/2.))
     bbox.append((tx+l/2., ty-w/2., tz-h/2.))
-    
+    #print('bbox={}'.format(bbox))
     gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS), dtype='float')
     for ind, values in enumerate(bbox):
         gt_regression[:, :, 3*ind] = values[0]*label[:,:]
         gt_regression[:, :, 3*ind+1] = values[1]*label[:,:]
         gt_regression[:, :, 3*ind+2] = values[2]*label[:,:]
-
-    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS))
-
+    
+    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS))        
     labels_concat = np.concatenate((y, gt_regression), axis=1) 
     #return y
     return labels_concat

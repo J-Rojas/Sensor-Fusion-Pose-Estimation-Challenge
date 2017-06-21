@@ -26,10 +26,13 @@ def precision(y_true, y_pred):
 
     #y_pred = tf.Print(y_pred, ["preds", y_pred])
     #y_true = tf.Print(y_true, ["labels", y_true])
+    y_true_obj = y_true
+    y_pred_obj = y_pred
     
-    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-
+    if y_pred.shape[2] > NUM_CLASSES:
+        _, y_true_obj, y_true_bb = tf.split(y_true, [NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        _, y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+    
     labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
     preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
 
@@ -45,9 +48,12 @@ def recall(y_true, y_pred):
     Computes the recall, a metric for multi-label classification of
     how many relevant items are selected.
     """
-
-    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+    y_true_obj = y_true
+    y_pred_obj = y_pred
+    
+    if y_pred.shape[2] > NUM_CLASSES:
+        _, y_true_obj, y_true_bb = tf.split(y_true, [NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        _, y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
 
     labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
     preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
@@ -66,15 +72,19 @@ def main():
                         help="list of data folders for validation")
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
-    parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')
+    parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')    
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
+    parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
 
     args = parser.parse_args()
     train_file = args.train_file
     validation_file = args.val_file
     outdir = args.outdir
-    dir_prefix = args.dir_prefix
-
+    dir_prefix = args.dir_prefix    
+    data_source = args.data_source    
+    use_regression = True if data_source == "lidar" else False
+    print('data_source={} use_regression={}'.format(data_source, use_regression))
+    
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, INPUT_SHAPE)
@@ -87,7 +97,7 @@ def main():
         if args.weightsFile != "":
             weightsFile = args.weightsFile
         model = load_model(args.modelFile, weightsFile,
-                           INPUT_SHAPE, NUM_CLASSES,
+                           INPUT_SHAPE, NUM_CLASSES, use_regression,
                            obj_to_bkg_ratio=population_statistics_train[
                                                 'positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
                            avg_obj_size=population_statistics_train['average_area'],
@@ -97,6 +107,7 @@ def main():
         model = build_model(
             INPUT_SHAPE,
             NUM_CLASSES,
+            use_regression,
             obj_to_bkg_ratio=population_statistics_train['positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
             avg_obj_size=population_statistics_train['average_area'],
             metrics=metrics

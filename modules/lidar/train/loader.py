@@ -93,7 +93,7 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
     obsh = obs_size[2]
 
     images = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
-    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS), dtype=np.uint8)
+    obj_labels = np.ndarray(shape=(BATCH_SIZE, IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES + globals.NUM_REGRESSION_OUTPUTS), dtype=np.uint8)    
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix, BATCH_SIZE)
 
@@ -112,8 +112,11 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
                             (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
             if augment:
                 batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
-
-            yield (images, obj_labels)
+            
+            images_flattened = np.reshape(images, (-1, IMG_HEIGHT*IMG_WIDTH, NUM_CHANNELS))
+            obj_labels_appended = np.concatenate((images_flattened, obj_labels), 2)                        
+            
+            yield (images, obj_labels_appended)
 
 
 def data_generator_predict(pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES):
@@ -174,8 +177,7 @@ def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
 
         label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape)
         # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
-        np.copyto(obj_labels[batch_index], np.uint8(label))
-
+        np.copyto(obj_labels[batch_index], np.uint8(label))        
         batch_index += 1
 
 
