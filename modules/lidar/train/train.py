@@ -222,11 +222,13 @@ def main():
             next(data_generator_train(
                 train_data[0], train_data[2], train_data[1],
                 len(train_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
+                data_source, camera_model,
                 cache=cache_train
             ))
             next(data_generator_train(
                 val_data[0], val_data[2], val_data[1],
                 len(val_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
+                data_source, camera_model,
                 cache=cache_val
             ))
 
