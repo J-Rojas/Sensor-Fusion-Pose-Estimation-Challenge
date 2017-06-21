@@ -82,7 +82,7 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 # read in images/ground truths batch by batch
 #
-def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
+def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, cache=None, randomize=True, augment=True):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -97,6 +97,14 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
 
     indicies_list = np.arange(len(tx))
 
+    is_cache_avail = False
+
+    if cache is not None:
+        is_cache_avail = cache['data'] is not None and cache['labels'] is not None
+        if not is_cache_avail:
+            cache['data'] = np.ndarray(shape=(len(pickle_dir_and_prefix), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
+            cache['labels'] = np.ndarray(shape=(len(tx), IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
+
     while 1:
 
         indicies = generate_index_list(indicies_list, randomize, num_batches, BATCH_SIZE)
@@ -105,9 +113,25 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
 
             batch_indicies = indicies[batch * BATCH_SIZE:batch * BATCH_SIZE + BATCH_SIZE]
 
-            load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
-            load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
-                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+            if not is_cache_avail:
+                load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
+                load_label_data(batch_indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
+                                (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+                if cache is not None:
+                    # save to cache
+                    i = 0
+                    for ind in batch_indicies:
+                        np.copyto(cache['data'][ind], images[i])
+                        np.copyto(cache['labels'][ind], obj_labels[i])
+                        i += 1
+            else:
+                # copy from cache
+                i = 0
+                for ind in batch_indicies:
+                    np.copyto(images[i], cache['data'][ind])
+                    np.copyto(obj_labels[i], cache['labels'][ind])
+                    i += 1
+
             if augment:
                 batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
@@ -133,33 +157,30 @@ def data_generator_predict(pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WI
             yield images
 
 
+def load_lidar_image_data(path):
+    f = open(path, 'rb')
+    pickle_data = pickle.load(f)
+    img_arr = np.asarray(pickle_data, dtype='float32')
+    f.close()
+    return img_arr
+
+
 def load_lidar_data(indicies, images, pickle_dir_and_prefix):
 
     batch_index = 0
 
     for ind in indicies:
-
         fname = pickle_dir_and_prefix[ind] + "_distance_float.lidar.p"
-
-        f = open(fname, 'rb')
-        pickle_data = pickle.load(f)
-        img_arr = np.asarray(pickle_data, dtype='float32')
+        img_arr = load_lidar_image_data(fname)
         np.copyto(images[batch_index, :, :, 0], img_arr)
-        f.close();
 
         fname = pickle_dir_and_prefix[ind] + "_height_float.lidar.p"
-        f = open(fname, 'rb')
-        pickle_data = pickle.load(f)
-        img_arr = np.asarray(pickle_data, dtype='float32')
+        img_arr = load_lidar_image_data(fname)
         np.copyto(images[batch_index, :, :, 1], img_arr)
-        f.close();
 
         fname = pickle_dir_and_prefix[ind] + "_intensity_float.lidar.p"
-        f = open(fname, 'rb')
-        pickle_data = pickle.load(f)
-        img_arr = np.asarray(pickle_data, dtype='float32')
+        img_arr = load_lidar_image_data(fname)
         np.copyto(images[batch_index, :, :, 2], img_arr)
-        f.close()
 
         batch_index += 1
 
