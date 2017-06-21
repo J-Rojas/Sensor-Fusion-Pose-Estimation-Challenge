@@ -4,6 +4,7 @@ import csv
 import glob
 import argparse
 import os.path
+import math
 from common.interpolate import TrackletInterpolater
 from common.tracklet_generator import Tracklet, TrackletCollection
 
@@ -37,11 +38,21 @@ def main():
     interpolater = TrackletInterpolater()
     interpolated_camera = interpolater.interpolate_from_csv(args.pred_csv, args.camera_csv)
 
-    if offset is not None:
-        for i in range(len(interpolated_camera)):
+    for i in range(len(interpolated_camera)):
+        if offset is not None:
             interpolated_camera[i]['tx'] += float(offset['tx'])
             interpolated_camera[i]['ty'] += float(offset['ty'])
             interpolated_camera[i]['tz'] += float(offset['tz'])
+            
+        if(math.isnan(interpolated_camera[i]['tx'])):
+            if(i > 0):
+                interpolated_camera[i]['tx'] = interpolated_camera[i - 1]['tx'] 
+                interpolated_camera[i]['ty'] = interpolated_camera[i - 1]['ty'] 
+                interpolated_camera[i]['tz'] = interpolated_camera[i - 1]['tz']
+            else:
+                interpolated_camera[i]['tx'] = 0
+                interpolated_camera[i]['ty'] = 0
+                interpolated_camera[i]['tz'] = 0
 
     tracklet.poses = interpolated_camera
     tracklet_xml.tracklets = [tracklet]
