@@ -195,7 +195,7 @@ def main():
     model.save_weights(os.path.join(outdir, "lidar_model.h5"), True)
 
     #print precision_recall_array
-    pr_curve_plotter.plot_pr_curve(loss_history.losses, loss_history.precisions, loss_history.recalls, outdir)
+    pr_curve_plotter.plot_pr_curve(loss_history, outdir)
 
 
 
