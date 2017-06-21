@@ -53,9 +53,14 @@ def main():
                 j = i + 1
                 while (len(interpolated_camera) > j and math.isnotnan(interpolated_camera[j]['tx'])):
                     j = j + 1
-                interpolated_camera[i]['tx'] = interpolated_camera[j]['tx'] 
-                interpolated_camera[i]['ty'] = interpolated_camera[j]['ty'] 
-                interpolated_camera[i]['tz'] = interpolated_camera[j]['tz'] 
+                if(len(interpolated_camera) > j):
+                    interpolated_camera[i]['tx'] = interpolated_camera[j]['tx'] 
+                    interpolated_camera[i]['ty'] = interpolated_camera[j]['ty'] 
+                    interpolated_camera[i]['tz'] = interpolated_camera[j]['tz'] 
+                else:
+                    interpolated_camera[i]['tx'] = 0 
+                    interpolated_camera[i]['ty'] = 0 
+                    interpolated_camera[i]['tz'] = 0
 
     tracklet.poses = interpolated_camera
     tracklet_xml.tracklets = [tracklet]
