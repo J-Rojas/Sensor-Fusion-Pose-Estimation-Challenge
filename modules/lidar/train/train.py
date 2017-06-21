@@ -1,23 +1,19 @@
-import sys
-import os
 import argparse
-import json
 import datetime
-import numpy as np
-import pandas as pd
-import h5py
+import json
+import os
+import keras.backend as K
+import tensorflow as tf
+from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
+from common.camera_model import CameraModel
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
                     NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, \
                     K_NEGATIVE_SAMPLE_RATIO_WEIGHT, \
                     IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
-from pretrain import calculate_population_weights
-
-import tensorflow as tf
-from model import build_model, load_model
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
-from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
-import keras.backend as K
-from common.camera_model import CameraModel 
+from model import build_model, load_model
+from pretrain import calculate_population_weights
+from common import pr_curve_plotter
 
 def precision(y_true, y_pred):
     """Precision metric.
@@ -54,7 +50,34 @@ def recall(y_true, y_pred):
     return recall
 
 
+class LossHistory(Callback):
+    def on_train_begin(self, logs={}):
+        self.losses = []
+        self.precisions = []
+        self.recalls = []
+        self.val_losses = []
+        self.val_precisions = []
+        self.val_recalls = []
+
+    def on_epoch_end(self, epoch, logs={}):
+        self.losses.append(logs.get('loss'))
+        self.precisions.append(logs.get('precision'))
+        self.recalls.append(logs.get('recall'))
+        self.val_losses.append(logs.get('val_loss'))
+        self.val_precisions.append(logs.get('val_precision'))
+        self.val_recalls.append(logs.get('val_recall'))
+
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
+        self.precisions.append(logs.get('precision'))
+        self.recalls.append(logs.get('recall'))
+        self.val_losses.append(logs.get('val_loss'))
+        self.val_precisions.append(logs.get('val_precision'))
+        self.val_recalls.append(logs.get('val_recall'))
+
+
 def main():
+
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
     parser.add_argument("--train_file", type=str, default="../data/train_folders.csv",
                         help="list of data folders for training")
@@ -67,6 +90,7 @@ def main():
     parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
     parser.add_argument('--camera_model', type=str, help='Camera calibration yaml')
     parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
+    parser.add_argument('--cache', type=str, default=None, help='Cache data')
 
     args = parser.parse_args()
     train_file = args.train_file
@@ -107,6 +131,11 @@ def main():
         print "invalid data source type"
         exit(1)
         
+    cache_train, cache_val = None, None
+    if args.cache is not None:
+        cache_train = {'data': None, 'labels': None}
+        cache_val = {'data': None, 'labels': None}
+
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, \
@@ -151,32 +180,67 @@ def main():
     print("start time:")
     print(datetime.datetime.now())
 
-    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'), \
-                   verbose=1, save_weights_only=True)
-    tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'), \
-                  write_graph=True, write_images=False)
-    model.fit_generator(
-        data_generator_train(
-            train_data[0], train_data[2], train_data[1],
-            BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES, 
-            data_source, camera_model
-        ),  # generator
-        n_batches_per_epoch_train,  # number of batches per epoch
-        validation_data=data_generator_train(
-            val_data[0], val_data[2], val_data[1],
-            BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES, 
-            data_source, camera_model
-        ),
-        validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
-        epochs=EPOCHS,
-        callbacks=[checkpointer, tensorboard],
-        verbose=1
-    )
+    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'),
+                                   verbose=1, save_weights_only=True)
+    tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'),
+                              write_graph=True, write_images=False)
+    loss_history = LossHistory()
+    try:
+        if args.cache is None or args.cache == 'generate':
+            model.fit_generator(
+                data_generator_train(
+                    train_data[0], train_data[2], train_data[1],
+                    BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
+                    data_source, camera_model,
+                    cache=cache_train
+                ),  # generator
+                n_batches_per_epoch_train,  # number of batches per epoch
+                validation_data=data_generator_train(
+                    val_data[0], val_data[2], val_data[1],
+                    BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
+                    data_source, camera_model,
+                    cache=cache_val
+                ),
+                validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
+                epochs=EPOCHS,
+                callbacks=[checkpointer, tensorboard, loss_history],
+                verbose=1
+            )
+        elif args.cache == 'shuffle':
+            # load all batches at once
+            next(data_generator_train(
+                train_data[0], train_data[2], train_data[1],
+                len(train_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
+                cache=cache_train
+            ))
+            next(data_generator_train(
+                val_data[0], val_data[2], val_data[1],
+                len(val_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
+                cache=cache_val
+            ))
+
+            print(len(cache_train['data']), len(cache_train['labels']))
+            model.fit(cache_train['data'], cache_train['labels'],
+                      batch_size=BATCH_SIZE,
+                      epochs=EPOCHS,
+                      verbose=1,
+                      callbacks=[checkpointer, tensorboard, loss_history],
+                      validation_data=(cache_val['data'], cache_val['labels']),
+                      shuffle=True)
+
+
+    except KeyboardInterrupt:
+        print('\n\nExiting training...')
+
     print("stop time:")
     print(datetime.datetime.now())
-
     # save model weights
     model.save_weights(os.path.join(outdir, data_source+"_model.h5"), True)
+
+    #print precision_recall_array
+    pr_curve_plotter.plot_pr_curve(loss_history.losses, loss_history.precisions, loss_history.recalls, outdir)
+
+
 
 if __name__ == '__main__':
     main()
