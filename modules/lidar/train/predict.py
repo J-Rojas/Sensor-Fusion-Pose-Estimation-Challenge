@@ -239,7 +239,6 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
     bounding_boxes = np.zeros((all_images.shape[0],4))
     centroids = np.zeros((all_images.shape[0],2))
     timestamps = []
-    print all_images.shape
     ind = 0
 
 
