@@ -293,6 +293,10 @@ def filter_camera_data_and_gt(camera_model, data, camera_bounds):
         else:
             index += 1
 
+    assert len(tx) == len(ty) and len(tz) == len(tx)
+    assert len(obsl) == len(tx) and len(obsw) == len(tx) and len(obsh) == len(tx)
+    assert len(data[1]) == len(tx)
+
     print "camera data {} out of {} removed".format(total_removed, len(data[1]))
 
 
