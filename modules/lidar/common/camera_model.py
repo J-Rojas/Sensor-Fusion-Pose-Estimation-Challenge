@@ -9,6 +9,7 @@ class CameraModel:
     def __init__(self):
         self.camera_model = PinholeCameraModel()
         self.matrix = None
+        self.cam_info = None
 
     def load_camera_calibration(self, camera_calibration_yaml, lidar_camera_calibration_yaml=None):
 
@@ -25,6 +26,7 @@ class CameraModel:
         stream.close()
 
         self.camera_model.fromCameraInfo(cam_info)
+        self.cam_info = cam_info
 
         if lidar_camera_calibration_yaml is not None:
             stream = file(lidar_camera_calibration_yaml, 'r')
@@ -59,6 +61,9 @@ class CameraModel:
         self.camera_model.rectifyImage(raw, img)
 
         return img
+
+    def shape(self):
+        return self.cam_info.width, self.cam_info.height
 
 
 def generateImage(camera, points, inputFile, outputFile):

@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import argparse
 import datetime
 import json
@@ -6,11 +8,13 @@ import keras.backend as K
 import tensorflow as tf
 from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
 from common.camera_model import CameraModel
+from process.globals import CAM_IMG_BOTTOM, CAM_IMG_TOP
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
                     NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, \
                     K_NEGATIVE_SAMPLE_RATIO_WEIGHT, \
                     IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
-from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch
+from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch, \
+                   filter_camera_data_and_gt
 from model import build_model, load_model
 from pretrain import calculate_population_weights
 from common import pr_curve_plotter
@@ -101,7 +105,8 @@ def main():
     camera_model_file = args.camera_model
     lidar2cam_model_file = args.lidar2cam_model
 
-    
+    skip_frames_indexes = []
+
     image_width = None
     image_height = None
     input_shape = None
@@ -142,7 +147,7 @@ def main():
                                     (image_height, image_width), data_source, camera_model)
     print("Train statistics: ", population_statistics_train)
 
-    metrics = [recall, precision, 'accuracy']
+    metrics = [recall, precision]
 
     if args.modelFile != "":
         weightsFile = args.modelFile.replace('json', 'h5')
@@ -171,6 +176,12 @@ def main():
     # determine list of data sources and ground truths to load
     train_data = get_data_and_ground_truth(train_file, dir_prefix, data_source)
     val_data = get_data_and_ground_truth(validation_file, dir_prefix, data_source)
+
+    if data_source == 'camera':
+        camera_bounds = [[0, camera_model.shape()[0]], [CAM_IMG_TOP, CAM_IMG_BOTTOM]]
+        # filter out frames where centroid is not visible
+        filter_camera_data_and_gt(camera_model, train_data, camera_bounds)
+        filter_camera_data_and_gt(camera_model, val_data, camera_bounds)
 
     # number of batches per epoch
     n_batches_per_epoch_train = data_number_of_batches_per_epoch(train_data[1], BATCH_SIZE)

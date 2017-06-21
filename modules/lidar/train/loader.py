@@ -28,7 +28,7 @@ def data_number_of_batches_per_epoch(data, BATCH_SIZE):
 #
 # rotate images/labels randomly
 #
-def data_random_rotate(image, label, obj_center, obj_size):
+def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height):
     
     # get bounding box of object in 2D
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
@@ -36,14 +36,14 @@ def data_random_rotate(image, label, obj_center, obj_size):
     
     # do not rotate if object rolls partially to right/left of the image  
     # get another random number
-    rotate_by = randrange(0, globals.IMG_WIDTH)
-    while upper_left_x+rotate_by <= globals.IMG_WIDTH <= lower_right_x+rotate_by:
-        rotate_by = randrange(0, globals.IMG_WIDTH)
+    rotate_by = randrange(0, img_width)
+    while upper_left_x+rotate_by <= img_width <= lower_right_x+rotate_by:
+        rotate_by = randrange(0, img_width)
     
     #print "rotate_by: " + str(rotate_by)
-    label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CLASSES))
+    label_reshaped = np.reshape(label, (img_height, img_width, globals.NUM_CLASSES))
     rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
-    rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, globals.NUM_CLASSES))
+    rotated_flatten_label = np.reshape(rotated_label, (img_height*img_width, globals.NUM_CLASSES))
     rotated_img = np.roll(image, rotate_by, axis=1)
     
     # copy back rotated parts to original images/label
@@ -53,14 +53,14 @@ def data_random_rotate(image, label, obj_center, obj_size):
 # 
 # rotate data in a given batch
 #
-def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh):
+def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh, img_width, img_height):
 
     img_ind = 0
     for ind in indicies:
 
         obj_center = [tx[ind], ty[ind], tz[ind]]
         obj_size = [obsl[ind], obsw[ind], obsh[ind]]
-        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size)
+        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size, img_width, img_height)
 
         img_ind += 1
 
@@ -144,8 +144,8 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix,
                     np.copyto(obj_labels[i], cache['labels'][ind])
                     i += 1
 
-            if augment and data_source == "lidar":
-                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
+            if augment:
+                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh, IMG_WIDTH, IMG_HEIGHT)
 
             yield (images, obj_labels)
 
@@ -262,6 +262,38 @@ def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape,
     else:
         print "invalid data source"
         exit(1)
+
+
+def filter_camera_data_and_gt(camera_model, data, camera_bounds):
+    centroid = data[0]
+    size = data[2]
+    tx = centroid[0]
+    ty = centroid[1]
+    tz = centroid[2]
+    obsl = size[0]
+    obsw = size[1]
+    obsh = size[2]
+
+    index = 0
+    total_removed = 0
+    for i in range(len(data[1])):
+        centroid_2d = camera_model.project_lidar_points_to_camera_2d([
+            [tx[index], ty[index], tz[index], 1.0]
+        ])[0]
+        if not(camera_bounds[0][0] < centroid_2d[0] < camera_bounds[0][1] and
+               camera_bounds[1][0] < centroid_2d[1] < camera_bounds[1][1]):
+            del tx[index]
+            del ty[index]
+            del tz[index]
+            del obsl[index]
+            del obsw[index]
+            del obsh[index]
+            del data[1][index]
+            total_removed += 1
+        else:
+            index += 1
+
+    print "camera data {} out of {} removed".format(total_removed, len(data[1]))
 
 
 def get_data(csv_sources, parent_dir):
