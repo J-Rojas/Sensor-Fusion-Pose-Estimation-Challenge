@@ -51,7 +51,7 @@ def main():
                 interpolated_camera[i]['tz'] = interpolated_camera[i - 1]['tz']
             else:
                 j = i + 1
-                while (len(interpolated_camera) > j and math.isnotnan(interpolated_camera[j]['tx'])):
+                while (len(interpolated_camera) > j and math.isnan(interpolated_camera[j]['tx'])):
                     j = j + 1
                 if(len(interpolated_camera) > j):
                     interpolated_camera[i]['tx'] = interpolated_camera[j]['tx'] 
