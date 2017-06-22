@@ -210,7 +210,7 @@ def main():
                     val_data[0], val_data[2], val_data[1],
                     BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
                     data_source, camera_model,
-                    cache=cache_val
+                    cache=cache_val, augment=False
                 ),
                 validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
                 epochs=EPOCHS,
@@ -229,7 +229,7 @@ def main():
                 val_data[0], val_data[2], val_data[1],
                 len(val_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
                 data_source, camera_model,
-                cache=cache_val
+                cache=cache_val, augment=False
             ))
 
             print(len(cache_train['data']), len(cache_train['labels']))
