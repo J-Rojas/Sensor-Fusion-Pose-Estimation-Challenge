@@ -18,14 +18,16 @@ from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAP
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 from model import build_model
 from process.extract_rosbag_lidar import generate_lidar_2d_front_view
+from encoder import distance, project_2d
 
 from keras.models import model_from_json
 
-MIN_PROB = 0.5 #lowest probability to participate in heatmap 
+MIN_PROB = 0.6 #lowest probability to participate in heatmap 
 MIN_BBOX_AREA = 100 #minimum area of the bounding box to be declared a car
 MIN_HEAT = 2 #lowest number of heat allowed
+MAX_BBX_DIST = 0.8 #maximum distance for neighbouring bounding boxes to be clustered
 
-def find_obstacle(y_pred, input_shape, use_regression):
+def find_obstacle(y_pred, input_shape):
     y_label = y_pred[:,1].flatten()      
     pred = np.reshape(y_label, input_shape[:2])
     ones = np.where(pred >= MIN_PROB)
@@ -75,6 +77,57 @@ def find_obstacle(y_pred, input_shape, use_regression):
     
     return (centroid_x, centroid_y), largest_bbox, max_area
 
+def find_obstacle_3d(y_pred):  
+    pos_pixels = y_pred[np.where(y_pred[:,1] >= MIN_PROB)]
+    bbox = pos_pixels[:, 2:]    
+    bbox = np.reshape(bbox, (-1, 8, 3))    
+    
+    # the bbox that has the most neighbouring boxes within a small distance is the candidate
+    min_count = 0
+    candidate_bbox = np.zeros((8, 3))    
+    for c in bbox:
+        count = 0
+        for c2 in bbox:
+            d = np.linalg.norm(c - c2)            
+            if d > 0 and d < MAX_BBX_DIST:    
+                #print(d)
+                count += 1
+                
+        if count > min_count:
+            min_count = count           
+            candidate_bbox = c
+            
+    #print('candidate_bbox: {}'.format(candidate_bbox))
+    centroid = np.mean(candidate_bbox, 0)
+    #print('centroid: {}'.format(centroid))
+         
+    return centroid, candidate_bbox
+
+ # project the 3d centroid and bbox to 2d, for visualization purpose. Can be removed if not needed
+def project_bbox_2d(centroid_3d, bbox_3d):
+    centroid_2d = project_2d(centroid_3d[0],centroid_3d[1], centroid_3d[2])
+    bboxes_2d = []    
+    d = []
+    
+    for c in bbox_3d:
+        x, y = project_2d(c[0], c[1], c[2])   
+        bboxes_2d.append((x, y))
+        d.append(distance(centroid_2d, (x, y)))
+    
+    bboxes_2d = np.array(bboxes_2d)
+    d = np.array(d)
+    indices = np.argsort(d)
+    sorted_corners = bboxes_2d[indices]
+    sorted_corners = sorted_corners[:4]
+
+    upper_left_x = sorted_corners.min(axis=0)[0]
+    upper_left_y = sorted_corners.min(axis=0)[1]
+    lower_right_x = sorted_corners.max(axis=0)[0]
+    lower_right_y = sorted_corners.max(axis=0)[1]
+    bbox_2d = (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+    
+    return centroid_2d, bbox_2d
+            
 #
 # take in find_obstacle() batch output (centroid x/theata,y/phi) and batch input(distance map) 
 # and back project 2D centroid to 3D centroid(x,y,z)
@@ -181,17 +234,20 @@ def predict_point_cloud(model, points, cmap=None, use_regression=True):
     model_input = np.asarray([input])
 
     prediction = model.predict(model_input)
-    centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE, use_regression)
-    if centroid is None:
-        centroid = (0, 0)
-        bbox = (0, 0, 0, 0)
+    if use_regression:
+        centroid_3d, bbox_3d = find_obstacle_3d(prediction)       
+    else:
+        centroid, bbox, bbox_area = find_obstacle(prediction[0], INPUT_SHAPE, use_regression)
+        if centroid is None:
+            centroid = (0, 0)
+            bbox = (0, 0, 0, 0)
 
-    centroids = np.array(centroid).reshape(1, 2)
-    bboxes = np.array(bbox).reshape(1,4)
-    distance_data = np.array(points_2d['distance_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
-    height_data = np.array(points_2d['height_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
-    centroid_3d = back_project_2D_2_3D(centroids, bboxes, distance_data, height_data)[0]
-    #print('predicted centroid: {}'.format(centroid_3d))
+        centroids = np.array(centroid).reshape(1, 2)
+        bboxes = np.array(bbox).reshape(1,4)
+        distance_data = np.array(points_2d['distance_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
+        height_data = np.array(points_2d['height_float']).reshape(1, IMG_HEIGHT, IMG_WIDTH)
+        centroid_3d = back_project_2D_2_3D(centroids, bboxes, distance_data, height_data)[0]
+        #print('predicted centroid: {}'.format(centroid_3d))
     
     return centroid_3d
 
@@ -246,6 +302,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir,
 
 
     # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
+    xyz_pred = np.zeros((all_images.shape[0],3))
     for prediction, file_prefix in zip(predictions, predict_data[1]):
         classes = prediction[:, 1]
 
@@ -259,8 +316,16 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir,
 
         # generate output - white pixels for car pixels
         image = obj_pixels.astype(np.uint8) * 255
-                             
-        centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE, use_regression)       
+        
+        if use_regression:
+            centroid_3d, bbox_3d = find_obstacle_3d(prediction)
+            xyz_pred[ind, :] = centroid_3d
+            
+            # project to 2d for visualization purpose
+            #centroid = project_2d(centroid_3d[0],centroid_3d[1], centroid_3d[2])
+            centroid, bbox = project_bbox_2d(centroid_3d, bbox_3d)            
+        else:    
+            centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE)       
 
         timestamps.append(os.path.basename(file_prefix).split('_')[0])
 
@@ -295,8 +360,9 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir,
                 os.mkdir(os.path.dirname(file_prefix))
 
             cv2.imwrite(file_prefix + "_class.png", image)
-        
-    xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
+    
+    if not use_regression:    
+        xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
     
     return xyz_pred, timestamps
         
