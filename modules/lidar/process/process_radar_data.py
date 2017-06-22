@@ -97,7 +97,7 @@ def main():
 
     radar_lidar_offset = 3.8 - 1.5494
 
-    count = 0
+    #count = 0
     out_write = []
 
     for key,item in radar_tracks_ts_based:
@@ -137,9 +137,9 @@ def main():
             generateImage(camera, bbox,
                           '{}/image_{}.png'.format(input_dir, ts),
                           '{}/image_{}_{}.png'.format(out_dir, ts, i))#'''
-        count+=1
-        if (count==5):
-            break;
+        #count+=1
+        #if (count==5):
+            #break;
     write_radar_data_to_csv(out_write,'{}/{}'.format(out_dir, radar_out_file))
 
 if __name__ == '__main__':
