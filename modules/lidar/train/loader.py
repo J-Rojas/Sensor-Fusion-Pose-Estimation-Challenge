@@ -300,7 +300,7 @@ def filter_camera_data_and_gt(camera_model, data, camera_bounds):
     print "camera data {} out of {} removed".format(total_removed, len(data[1]))
 
 
-def get_data(csv_sources, parent_dir):
+def get_data(csv_sources, parent_dir, data_source="lidar"):
     txl = []
     tyl = []
     tzl = []
@@ -313,16 +313,22 @@ def get_data(csv_sources, parent_dir):
     def process(dirset):
 
         # load timestamps
-        lidar_timestamps = dirset.dir + "/lidar_timestamps.csv"
+        if data_source == 'lidar':
+            timestamp_truth_fname = dirset.dir+"/lidar_timestamps.csv"
+        elif data_source == 'camera':
+            timestamp_truth_fname = dirset.dir+"/camera_timestamps.csv"
+        else:
+            print "invalid data source type"
+            assert(0)       
 
-        with open(lidar_timestamps) as csvfile:
+        with open(timestamp_truth_fname) as csvfile:
             readCSV = csv.DictReader(csvfile, delimiter=',')
 
             for row in readCSV:
 
                 ts = row['timestamp']
 
-                pickle_dir_and_prefix.append(file_prefix_for_timestamp(dirset.dir, ts))
+                pickle_dir_and_prefix.append(file_prefix_for_timestamp(dirset.dir, data_source, ts))
                 txl.append(1.0)
                 tyl.append(1.0)
                 tzl.append(1.0)
