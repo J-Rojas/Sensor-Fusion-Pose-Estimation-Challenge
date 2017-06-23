@@ -9,12 +9,14 @@ import math
 import csv
 import rosbag
 import sensor_msgs.point_cloud2
-
 print(sys.path)
 sys.path.append('../')
+from common.camera_model import CameraModel
 from process.globals import X_MIN, Y_MIN, RES, RES_RAD, LIDAR_MIN_HEIGHT
 from scipy.ndimage.measurements import label
-from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME
+from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, \
+                    INPUT_SHAPE, BATCH_SIZE, PREDICTION_FILE_NAME, \
+                    IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 import model as model_module
 from process.extract_rosbag_lidar import generate_lidar_2d_front_view
@@ -213,7 +215,7 @@ def predict_rosbag(model, predict_file):
 def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir):        
     # load data
     predict_data = get_data(predict_file, dir_prefix)
-
+    
     n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
     
     # get some data
@@ -296,6 +298,132 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
     xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
     
     return xyz_pred, timestamps
+ 
+# return predictions from lidar/camera 2d frontviews  
+def predict(model, predict_file, dir_prefix, export, output_dir, data_source="lidar", camera_model=None):  
+
+    image_width = None
+    image_height = None
+    input_shape = None
+    num_channels = None
+    if data_source == "camera":
+       image_width = IMG_CAM_WIDTH
+       image_height = IMG_CAM_HEIGHT
+       input_shape = (IMG_CAM_HEIGHT, IMG_CAM_WIDTH, NUM_CAM_CHANNELS)  
+       num_channels = NUM_CAM_CHANNELS       
+    elif data_source == "lidar":
+        camera_model = None
+        image_width = IMG_WIDTH
+        image_height = IMG_HEIGHT
+        input_shape = (IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS)
+        num_channels= NUM_CHANNELS        
+    else:
+        print "invalid data source type"
+        exit(1)
+
+    # load data
+    predict_data = get_data(predict_file, dir_prefix)
+    
+    n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
+    
+    # get some data
+    predictions = model.predict_generator(
+        data_generator_train(
+            predict_data[0], predict_data[2], predict_data[1],
+            BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
+            data_source, camera_model,
+            randomize=False, augment=False
+        ),
+        n_batches_per_epoch,
+        verbose=0
+    )
+    
+
+    #print predict_data[0]
+    # reload data as one big batch
+    all_data_loader = data_generator_train(predict_data[0], predict_data[2], predict_data[1],
+            len(predict_data[1]), image_height, image_width, num_channels, NUM_CLASSES,
+            data_source, camera_model,
+            randomize=False, augment=False)
+    all_images, all_labels = all_data_loader.next()
+    
+
+    bounding_boxes = np.zeros((all_images.shape[0],4))
+    # only centroids[0] and centroids[1] will be valid. centroids[2] is added for 
+    # output compatibility between lidar and camera images
+    centroids = np.zeros((all_images.shape[0],3))
+    timestamps = []
+    ind = 0
+
+
+    # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
+    for prediction, file_prefix in zip(predictions, predict_data[1]):
+        classes = prediction[:, 1]
+
+        classes = np.around(classes)
+
+        #print(np.where([classes == 1.0])[1])
+        #print(classes, np.max(classes))
+
+        #obj_pixels = np.dstack((classes, classes, classes))
+        #obj_pixels = np.reshape(obj_pixels, input_shape)
+        obj_pixels = np.reshape(classes, (input_shape[0],input_shape[1]))
+
+        # generate output - white pixels for car pixels
+        image = obj_pixels.astype(np.uint8) * 255
+                             
+        centroid, bbox, bbox_area = find_obstacle(prediction, input_shape)       
+
+        timestamps.append(os.path.basename(file_prefix).split('_')[0])
+
+        if centroid is not None:
+            cv2.rectangle(image, bbox[0], bbox[1], (0, 0, 255), 2)            
+            #print('{} -- centroid found: ({}, {}), area={}'.format(file_prefix, centroid[0], centroid[1], bbox_area))  
+            centroids[ind][0] = centroid[0]
+            centroids[ind][1] = centroid[1]
+            centroids[ind][2] = None
+            bounding_boxes[ind,0] = bbox[0][0]
+            bounding_boxes[ind,1] = bbox[0][1]
+            bounding_boxes[ind,2] = bbox[1][0]
+            bounding_boxes[ind,3] = bbox[1][1]               
+        else:
+            print('{} -- centroid not found'.format(file_prefix))
+            centroids[ind][0] = 0
+            centroids[ind][1] = 0
+            centroids[ind][2] = None
+            bounding_boxes[ind,0] = 0
+            bounding_boxes[ind,1] = 0
+            bounding_boxes[ind,2] = 0
+            bounding_boxes[ind,3] = 0               
+
+        ind += 1
+
+        if export:
+            if data_source == "lidar":
+                if output_dir is not None:
+                    file_prefix = output_dir + "/lidar_predictions/" + os.path.basename(file_prefix)
+                else:
+                    file_prefix = os.path.dirname(file_prefix).replace('/lidar_360/', '') + "/lidar_predictions/" + os.path.basename(file_prefix)
+            elif data_source == "camera":
+                if output_dir is not None:
+                    file_prefix = output_dir + "/camera_predictions/" + os.path.basename(file_prefix)
+                else:
+                    file_prefix = os.path.dirname(file_prefix).replace('/camera/', '') + "/camera_predictions/" + os.path.basename(file_prefix)
+            
+            if not(os.path.isdir(os.path.dirname(file_prefix))):
+                os.mkdir(os.path.dirname(file_prefix))
+
+            cv2.imwrite(file_prefix + "_class.png", image)
+    
+    if data_source == "lidar":    
+        xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])
+        return xyz_pred, timestamps
+    elif data_source == "camera":
+        return centroids, timestamps
+    else:
+        print "invalid data source type"
+        exit(1)        
+    
         
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
@@ -306,6 +434,10 @@ def main():
     parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
     parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
+    parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
+    parser.add_argument('--camera_model', type=str, help='Camera calibration yaml')
+    parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
+    
     parser.set_defaults(export=False)
 
     args = parser.parse_args()
@@ -313,6 +445,27 @@ def main():
     data_type = args.data_type
     predict_file = args.predict_file
     dir_prefix = args.dir_prefix
+    data_source = args.data_source
+    camera_model_file = args.camera_model
+    lidar2cam_model_file = args.lidar2cam_model
+
+    camera_model = None
+    prediction_file_name = None
+    if data_source == "camera":
+       if camera_model_file == "":
+            print "need to enter camera calibration yaml"
+            exit(1)
+       if lidar2cam_model_file == "":
+            print "need to enter lidar to camera calibration yaml"
+            exit(1)
+       camera_model = CameraModel()
+       camera_model.load_camera_calibration(camera_model_file, lidar2cam_model_file)
+       prediction_file_name = "objects_obs1_camera_predictions.csv"
+    elif data_source == "lidar":
+       prediction_file_name = PREDICTION_FILE_NAME
+    else:
+       print "invalid data source type"
+       exit(1)        
     
     if data_type is None or not data_type == 'rosbag':
         data_type = 'frontview'
@@ -322,15 +475,15 @@ def main():
     model = load_model(args.modelFile, args.weightsFile)
         
     if data_type == 'frontview':
-        xyz_pred, timestamps = predict_lidar_frontview(model, predict_file, dir_prefix, args.export, output_dir)        
+        xyz_pred, timestamps = predict(model, predict_file, dir_prefix, args.export, output_dir, data_source, camera_model)        
     else:
         xyz_pred, timestamps = predict_rosbag(model, predict_file)
 
     if output_dir is not None:
         file_prefix = output_dir + "/"
 
-        write_prediction_data_to_csv(xyz_pred, timestamps, file_prefix + PREDICTION_FILE_NAME)
-        print('prediction result written to ' + file_prefix + PREDICTION_FILE_NAME)    
+        write_prediction_data_to_csv(xyz_pred, timestamps, file_prefix + prediction_file_name)
+        print('prediction result written to ' + file_prefix + prediction_file_name)    
 
         
 if __name__ == '__main__':
