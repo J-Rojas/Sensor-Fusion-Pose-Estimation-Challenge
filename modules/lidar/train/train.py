@@ -191,7 +191,7 @@ def main():
     print("start time:")
     print(datetime.datetime.now())
 
-    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, 'lidar_weights.{epoch:02d}-{loss:.4f}.hdf5'),
+    checkpointer = ModelCheckpoint(filepath=os.path.join(outdir, data_source+'_weights.{epoch:02d}-{loss:.4f}.hdf5'),
                                    verbose=1, save_weights_only=True)
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'),
                               write_graph=True, write_images=False)
