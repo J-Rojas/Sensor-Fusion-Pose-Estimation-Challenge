@@ -85,7 +85,7 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, 
         BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, 
-        data_source="lidar", camera_model=None, cache=None, randomize=True, augment=True):
+        data_source, camera_model=None, cache=None, randomize=True, augment=True):
     tx = obs_centroids[0]
     ty = obs_centroids[1]
     tz = obs_centroids[2]
@@ -252,7 +252,7 @@ def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
         batch_index += 1
 
 def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, 
-                    data_source="lidar", camera_model=None):
+                    data_source, camera_model=None):
 
     if data_source == "lidar":
         load_lidar_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape)
@@ -300,7 +300,7 @@ def filter_camera_data_and_gt(camera_model, data, camera_bounds):
     print "camera data {} out of {} removed".format(total_removed, len(data[1]))
 
 
-def get_data(csv_sources, parent_dir, data_source="lidar"):
+def get_data(csv_sources, parent_dir, data_source):
     txl = []
     tyl = []
     tzl = []
