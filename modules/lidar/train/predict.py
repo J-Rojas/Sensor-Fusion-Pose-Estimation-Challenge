@@ -300,7 +300,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir)
     return xyz_pred, timestamps
  
 # return predictions from lidar/camera 2d frontviews  
-def predict(model, predict_file, dir_prefix, export, output_dir, data_source="lidar", camera_model=None):  
+def predict(model, predict_file, dir_prefix, export, output_dir, data_source, camera_model=None):  
 
     image_width = None
     image_height = None
