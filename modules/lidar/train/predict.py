@@ -322,7 +322,7 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source="li
         exit(1)
 
     # load data
-    predict_data = get_data(predict_file, dir_prefix)
+    predict_data = get_data(predict_file, dir_prefix, data_source)
     
     n_batches_per_epoch = data_number_of_batches_per_epoch(predict_data[1], BATCH_SIZE)
     
