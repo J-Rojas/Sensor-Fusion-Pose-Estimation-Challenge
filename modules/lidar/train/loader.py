@@ -84,10 +84,14 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 # read in images/ground truths batch by batch
 #
-def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
-    tx = obs_centroids[0]
-    ty = obs_centroids[1]
-    tz = obs_centroids[2]
+def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_prefix, 
+        BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
+    tx = obs_centroids_and_rotation[0]
+    ty = obs_centroids_and_rotation[1]
+    tz = obs_centroids_and_rotation[2]
+    rx = obs_centroids_and_rotation[3]
+    ry = obs_centroids_and_rotation[4]
+    rz = obs_centroids_and_rotation[5]
     obsl = obs_size[0]
     obsw = obs_size[1]
     obsh = obs_size[2]
@@ -108,8 +112,8 @@ def data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, BATCH_S
             batch_indicies = indicies[batch * BATCH_SIZE:batch * BATCH_SIZE + BATCH_SIZE]
 
             load_lidar_data(batch_indicies, images, pickle_dir_and_prefix)
-            load_label_data(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh,
-                            (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
+            load_label_data(batch_indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, 
+                            obsl, obsw, obsh, (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES))
             if augment:
                 batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh)
 
@@ -166,13 +170,14 @@ def load_lidar_data(indicies, images, pickle_dir_and_prefix):
         batch_index += 1
 
 
-def load_label_data(indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape):
+def load_label_data(indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh, shape):
 
     batch_index = 0    
     
     for ind in indicies:
 
-        label = generate_label(tx[ind], ty[ind], tz[ind], obsl[ind], obsw[ind], obsh[ind], shape, image=images[batch_index,:,:,:2])
+        label = generate_label(tx[ind], ty[ind], tz[ind], rx[ind], ry[ind], rz[ind], 
+                obsl[ind], obsw[ind], obsh[ind], shape, image=images[batch_index,:,:,:2])
         # label = np.ones(shape=(IMG_HEIGHT, IMG_WIDTH),dtype=np.dtype('u2'))
         np.copyto(obj_labels[batch_index], np.uint8(label))
 
@@ -183,6 +188,9 @@ def get_data(csv_sources, parent_dir):
     txl = []
     tyl = []
     tzl = []
+    rxl = []
+    ryl = []
+    rzl = []    
     obsl = []
     obsw = []
     obsh = []
@@ -205,13 +213,16 @@ def get_data(csv_sources, parent_dir):
                 txl.append(1.0)
                 tyl.append(1.0)
                 tzl.append(1.0)
+                rxl.append(1.0)
+                ryl.append(1.0)
+                rzl.append(1.0)
                 obsl.append(1.0)
                 obsw.append(1.0)
                 obsh.append(1.0)
 
     foreach_dirset(csv_sources, parent_dir, process)
 
-    obs_centroid = [txl, tyl, tzl]
+    obs_centroid_and_rotation = [txl, tyl, tzl, rxl, ryl, rzl]
     obs_size = [obsl, obsw, obsh]
     return obs_centroid, pickle_dir_and_prefix, obs_size
 
@@ -223,6 +234,9 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
     txl = []
     tyl = []
     tzl = []
+    rxl = []
+    ryl = []
+    rzl = []    
     obsl = []
     obsw = []
     obsh = []
@@ -241,21 +255,26 @@ def get_data_and_ground_truth(csv_sources, parent_dir):
                 tx = row2['tx']
                 ty = row2['ty']
                 tz = row2['tz']
-
+                rx = row2['rx']
+                ry = row2['ry']
+                rz = row2['rz']
                 pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, ts)
                 pickle_dir_and_prefix.append(pickle_dir_prefix)
                 txl.append(float(tx))
                 tyl.append(float(ty))
                 tzl.append(float(tz))
+                rxl.append(float(rx))
+                ryl.append(float(ry))
+                rzl.append(float(rz))
                 obsl.append(float(dirset.mdr['l']))
                 obsw.append(float(dirset.mdr['w']))
                 obsh.append(float(dirset.mdr['h']))
 
     foreach_dirset(csv_sources, parent_dir, process)
 
-    obs_centroid = [txl, tyl, tzl]
+    obs_centroid_and_rotation = [txl, tyl, tzl, rxl, ryl, rzl]
     obs_size = [obsl, obsw, obsh]
-    return obs_centroid, pickle_dir_and_prefix, obs_size
+    return obs_centroid_and_rotation, pickle_dir_and_prefix, obs_size
 
 
 def file_prefix_for_timestamp(parent_dir, ts=None):

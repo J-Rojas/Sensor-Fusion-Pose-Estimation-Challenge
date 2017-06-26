@@ -9,8 +9,9 @@ def calculate_sample_statistics(input_shape, lidar_gt, metadata):
 
     # generate label
     tx, ty, tz = np.float64(lidar_gt['tx']), np.float64(lidar_gt['ty']), np.float64(lidar_gt['tz'])
+    rx, ry, rz = np.float64(lidar_gt['rx']), np.float64(lidar_gt['ry']), np.float64(lidar_gt['rz'])
     l, w, h = np.float64(metadata['l']), np.float64(metadata['w']), np.float64(metadata['h'])
-    label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,1].flatten()
+    label = generate_label(tx, ty, tz, rx, ry, rz, l, w, h, input_shape)[:,1].flatten()
 
     # determine positive samples
     positive = len(np.where(label == 1)[0])

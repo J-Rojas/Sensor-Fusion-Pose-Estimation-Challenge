@@ -144,7 +144,7 @@ def get_label_bounds(tx, ty, tz, l, w, h, method='outer_rect'):
     return None
 
 
-def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect', image=None):
+def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_rect', image=None):
     if method == 'circle':
         (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, l, w, h)
         y = generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE)
