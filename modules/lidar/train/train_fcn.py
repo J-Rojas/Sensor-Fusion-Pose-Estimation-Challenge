@@ -33,22 +33,31 @@ from common import pr_curve_plotter
 from common.csv_utils import foreach_dirset
 from train import LossHistory
 
-def load_gt(indicies, centroid_rotation, gt):
+def load_gt(indicies, centroid_rotation, gt, obs_size):
     
     batch_index = 0
 
     for ind in indicies:
-        gt[batch_index,0] = centroid_rotation[0][ind]
-        gt[batch_index,1] = centroid_rotation[1][ind]
-        gt[batch_index,2] = centroid_rotation[2][ind]
-        gt[batch_index,3] = centroid_rotation[3][ind]
-        gt[batch_index,4] = centroid_rotation[4][ind]
-        gt[batch_index,5] = centroid_rotation[5][ind]
+        gt[batch_index,0] = centroid_rotation[0][ind] #tx
+        gt[batch_index,1] = centroid_rotation[1][ind] #ty
+        gt[batch_index,2] = centroid_rotation[2][ind] #tz
+        gt[batch_index,3] = centroid_rotation[5][ind] #rz
+        gt[batch_index,4] = obs_size[0][ind]
+        gt[batch_index,5] = obs_size[1][ind]
+        gt[batch_index,6] = obs_size[2][ind]        
         batch_index += 1
 
+def load_radar_data(indicies, radar_ranges_angles, radar_data):
+
+    batch_index = 0
+    for ind in indicies:
+        radar_ranges_angles[batch_index,0] = radar_data[0][ind]
+        radar_ranges_angles[batch_index,1] = radar_data[1][ind]
+        batch_index +=1
+        
 def data_generator_FCN(obs_centroids, obs_size, 
                         pickle_dir_and_prefix_cam, pickle_dir_and_prefix_lidar,
-                        batch_size):
+                        batch_size, radar_data):
                         
     tx = obs_centroids[0]
     ty = obs_centroids[1]
@@ -65,7 +74,8 @@ def data_generator_FCN(obs_centroids, obs_size,
                     globals.IMG_CAM_WIDTH, globals.NUM_CAM_CHANNELS), dtype=float)    
     lidar_images = np.ndarray(shape=(batch_size, globals.IMG_HEIGHT, 
                     globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
-    centroid_rotation = np.ndarray(shape=(batch_size, 6), dtype=float)
+    centroid_rotation_size = np.ndarray(shape=(batch_size, 7), dtype=float)
+    radar_ranges_angles = np.ndarray(shape=(batch_size, 2), dtype=float)
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix_cam, batch_size)
 
@@ -81,9 +91,10 @@ def data_generator_FCN(obs_centroids, obs_size,
 
             load_data(batch_indicies, lidar_images, pickle_dir_and_prefix_lidar, "lidar", globals.NUM_CHANNELS)
             load_data(batch_indicies, cam_images, pickle_dir_and_prefix_cam, "camera", globals.NUM_CAM_CHANNELS)
-            load_gt(batch_indicies, obs_centroids, centroid_rotation)
- 
-            yield ([cam_images, lidar_images], centroid_rotation)
+            load_radar_data(batch_indicies, radar_ranges_angles, radar_data) 
+            load_gt(batch_indicies, obs_centroids, centroid_rotation_size, obs_size)
+             
+            yield ([cam_images, lidar_images, radar_ranges_angles], centroid_rotation_size)
    
     
 def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir):
@@ -101,20 +112,27 @@ def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir)
     
     pickle_dir_and_prefix_cam = []
     pickle_dir_and_prefix_lidar = []
+    radar_range = []
+    radar_angle = []
 
     def process(dirset):
 
         lidar_truth_fname = dirset.dir+"/obs_poses_interp_transform.csv"
         cam_truth_fname = dirset.dir+"/obs_poses_camera.csv"
+        radar_data_fname = dirset.dir+"/radar/radar_tracks.csv"
 
         df_lidar_truths = pd.read_csv(lidar_truth_fname)
         lidar_truths_list = df_lidar_truths['timestamp'].tolist()
+        
+        df_radar_data = pd.read_csv(radar_data_fname)
          
         #print lidar_rows[:,'timestamp']   
         def nearest_lidar_timestamp(cam_ts):
             x = min(lidar_truths_list, key=lambda x:abs(x-cam_ts))
             return x
-            
+         
+        def nearest_radar_timestamp_data(cam_ts):
+            return df_radar_data.ix[(df_radar_data['timestamp']-cam_ts).abs().argsort()[0]]    
 
         with open(cam_truth_fname) as csvfile_2:
             readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
@@ -144,15 +162,19 @@ def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir)
                 pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, "lidar", str(lidar_ts))
                 pickle_dir_and_prefix_lidar.append(pickle_dir_prefix)
                 
-                
+                radar_data = nearest_radar_timestamp_data(int(ts))
+                radar_range.append(float(radar_data['range']))
+                radar_angle.append(float(radar_data['angle']))
+                              
                 
     foreach_dirset(csv_sources, parent_dir, process)
 
     obs_centroid = [txl_cam, tyl_cam, tzl_cam, rxl_cam, ryl_cam, rzl_cam, timestamps_cam]
     obs_size = [obsl_cam, obsw_cam, obsh_cam]
+    radar_data = [radar_range, radar_angle]
       
     
-    return obs_centroid, pickle_dir_and_prefix_cam, obs_size, pickle_dir_and_prefix_lidar
+    return obs_centroid, pickle_dir_and_prefix_cam, obs_size, pickle_dir_and_prefix_lidar, radar_data
 
 
 def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True):
@@ -175,7 +197,10 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
 
     cam_net_out = build_FCN(cam_inp, cam_net_out, "cam")
     lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "lidar")
-    concat_input = concatenate([cam_net_out, lidar_net_out])
+    radar_inp = Input(shape=(2,), name='radar')
+    
+
+    concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
     
     dense_1 = Dense(32, activation='relu', name='dense1', use_bias=True,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
@@ -183,10 +208,10 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     dense_2 = Dense(64, activation='relu', name='dense2', use_bias=True,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_1)
     dropout_2 = Dropout(0.3)(dense_2)
-    dense_3 = Dense(6, activation='relu', name='dense3', use_bias=True,
+    dense_3 = Dense(7, activation='relu', name='dense3', use_bias=True,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_2)
 
-    model = Model(inputs=[cam_inp, lidar_inp], outputs=dense_3)                   
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=dense_3)                   
     model.compile(optimizer=Adam(),
                   loss="mean_squared_error", metrics=['mae'])
     
@@ -271,12 +296,12 @@ def main():
     lidar_inp_layer = lidar_net.input
     lidar_out_layer = lidar_net.output
     
-    cam_lidar_net = build_FCN_cam_lidar(cam_inp_layer, lidar_inp_layer, 
+    cam_lidar_radar_net = build_FCN_cam_lidar(cam_inp_layer, lidar_inp_layer, 
                         cam_out_layer, lidar_out_layer)
 
     # save the model
     with open(os.path.join(outdir, 'fcn_model.json'), 'w') as outfile:
-            json.dump(cam_lidar_net.to_json(), outfile)   
+            json.dump(cam_lidar_radar_net.to_json(), outfile)   
                                 
     train_data = get_data_and_ground_truth_matching_lidar_cam_frames(train_file, dir_prefix)
     val_data = get_data_and_ground_truth_matching_lidar_cam_frames(validation_file, dir_prefix)
@@ -297,15 +322,15 @@ def main():
 
     try:
 
-        cam_lidar_net.fit_generator(
+        cam_lidar_radar_net.fit_generator(
             data_generator_FCN(
                 train_data[0], train_data[2], train_data[1], 
-                train_data[3], BATCH_SIZE
+                train_data[3], BATCH_SIZE, train_data[4]
             ),  # generator
             n_batches_per_epoch_train,  # number of batches per epoch
             validation_data=data_generator_FCN(
                 val_data[0], val_data[2], val_data[1], 
-                val_data[3], BATCH_SIZE
+                val_data[3], BATCH_SIZE, val_data[4]
             ),
             validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
             epochs=EPOCHS,
@@ -319,7 +344,7 @@ def main():
     print("stop time:")
     print(datetime.datetime.now())
     # save model weights
-    cam_lidar_net.save_weights(os.path.join(outdir, "fcn_model.h5"), True)
+    cam_lidar_radar_net.save_weights(os.path.join(outdir, "fcn_model.h5"), True)
 
     #print precision_recall_array
     pr_curve_plotter.plot_pr_curve(loss_history, outdir)

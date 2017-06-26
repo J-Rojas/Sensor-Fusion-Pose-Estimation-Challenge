@@ -76,20 +76,28 @@ def get_predict_data_matching_lidar_cam_frames(csv_sources, parent_dir):
         
     pickle_dir_and_prefix_cam = []
     pickle_dir_and_prefix_lidar = []
+    radar_range = []
+    radar_angle = []
 
     def process(dirset):
     
         timestamp_lidars = dirset.dir+"/lidar_timestamps.csv"
         timestamp_camera = dirset.dir+"/camera_timestamps.csv"
+        radar_data_fname = dirset.dir+"/radar/radar_tracks.csv"
+
     
         df_lidar_timestamps = pd.read_csv(timestamp_lidars)
         lidar_timestamp_list = df_lidar_timestamps['timestamp'].tolist()
+       
+        df_radar_data = pd.read_csv(radar_data_fname)
          
         #print lidar_rows[:,'timestamp']   
         def nearest_lidar_timestamp(cam_ts):
             x = min(lidar_timestamp_list, key=lambda x:abs(x-cam_ts))
             return x
             
+        def nearest_radar_timestamp_data(cam_ts):
+            return df_radar_data.ix[(df_radar_data['timestamp']-cam_ts).abs().argsort()[0]]    
 
         with open(timestamp_camera) as csvfile_2:
             readCSV_2 = csv.DictReader(csvfile_2, delimiter=',')
@@ -112,15 +120,19 @@ def get_predict_data_matching_lidar_cam_frames(csv_sources, parent_dir):
                 lidar_ts = nearest_lidar_timestamp(int(ts))
                 pickle_dir_prefix = file_prefix_for_timestamp(dirset.dir, "lidar", str(lidar_ts))
                 pickle_dir_and_prefix_lidar.append(pickle_dir_prefix)
-                
-                
+ 
+                radar_data = nearest_radar_timestamp_data(int(ts))               
+                radar_range.append(float(radar_data['range']))
+                radar_angle.append(float(radar_data['angle']))
+
                 
     foreach_dirset(csv_sources, parent_dir, process)
       
     obs_centroid = [txl, tyl, tzl, rxl, ryl, rzl]
     obs_size = [obsl, obsw, obsh]
-    
-    return obs_centroid, pickle_dir_and_prefix_cam, obs_size, pickle_dir_and_prefix_lidar
+    radar_data = [radar_range, radar_angle]
+   
+    return obs_centroid, pickle_dir_and_prefix_cam, obs_size, pickle_dir_and_prefix_lidar, radar_data
 
  
 # return predictions from lidar/camera 2d frontviews  
@@ -136,7 +148,7 @@ def predict_fcn(model, predict_file, dir_prefix, export, output_dir, camera_mode
     predictions = model.predict_generator(
         data_generator_FCN(
                 predict_data[0], predict_data[2], predict_data[1], predict_data[3],
-                BATCH_SIZE
+                BATCH_SIZE, predict_data[4]
             ),  # generator
         n_batches_per_epoch,
         verbose=0
@@ -147,7 +159,7 @@ def predict_fcn(model, predict_file, dir_prefix, export, output_dir, camera_mode
     # reload data as one big batch
     all_data_loader = data_generator_FCN(
             predict_data[0], predict_data[2], predict_data[1], predict_data[3],
-            len(predict_data[1])
+            len(predict_data[1]), predict_data[4]
             )
     all_images, all_labels = all_data_loader.next()
     
