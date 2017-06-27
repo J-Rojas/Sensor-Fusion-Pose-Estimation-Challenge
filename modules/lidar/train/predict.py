@@ -98,7 +98,9 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
     # revert prediction encoding to uncover bbox
     # limit to the 2d positive pixels to improve processing time
     for img_x in range(upper_left_x - 100, lower_right_x + 100):
-        for img_y in range(upper_left_y - 2, lower_right_y + 2):    
+        for img_y in range(upper_left_y - 2, lower_right_y + 2):
+    #for img_y in pos[0]:
+    #    for img_x in pos[1]:
             if not (img_x in pos[1] and img_y in pos[0]):
                 continue
                 
@@ -130,7 +132,7 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
                 bbox.append(c)
    
     if len(bbox) == 0:
-        return np.array([0, 0, 0]), None
+        return np.array([0.0, 0.0, 0.0, 0.0]), None
         
     bbox = np.array(bbox)
     candidate_bbox = np.zeros((8, 3))  
@@ -156,28 +158,15 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
     indices = np.where(counts == counts.max())    
     bbox = bbox[indices]          
     
-    # the following code likely need revisit, after we get better labels and more accurate classification results. 
-    low_x = bbox.min(axis=0).min(axis=0)[0]
-    low_y = bbox.min(axis=0).min(axis=0)[1]
-    low_z = bbox.min(axis=0).min(axis=0)[2]
-    high_x = bbox.max(axis=0).max(axis=0)[0]
-    high_y = bbox.max(axis=0).max(axis=0)[1]
-    high_z = bbox.max(axis=0).max(axis=0)[2]
-    
-    candidate_bbox[0, :] = np.array([low_x, high_y, high_z])
-    candidate_bbox[1, :] = np.array([low_x, high_y, low_z])
-    candidate_bbox[2, :] = np.array([low_x, low_y, high_z])
-    candidate_bbox[3, :] = np.array([low_x, low_y, low_z])
-    candidate_bbox[4, :] = np.array([high_x, high_y, high_z])
-    candidate_bbox[5, :] = np.array([high_x, high_y, low_z])
-    candidate_bbox[6, :] = np.array([high_x, low_y, high_z])
-    candidate_bbox[7, :] = np.array([high_x, low_y, low_z])
+    candidate_bbox = bbox.mean(axis=0)   
     #print('candidate_bbox: {}'.format(candidate_bbox))
-    centroid = np.mean(candidate_bbox, 0)
-    #print('centroid: {}'.format(centroid))
-         
-    return centroid, candidate_bbox
-
+    pred = np.array([0.0, 0.0, 0.0, 0.0])
+    pred[:3] = np.mean(candidate_bbox, 0)
+   
+    # pick a point from the front and back at the same z to calculate the orientation
+    pred[3] = math.atan2(candidate_bbox[2, 1] - candidate_bbox[6, 1], candidate_bbox[2, 0] - candidate_bbox[6, 0])   
+    
+    return pred, candidate_bbox
     
  # project the 3d centroid and bbox to 2d, for visualization purpose. Can be removed if not needed
 def project_bbox_2d(centroid_3d, bbox_3d):
@@ -209,7 +198,7 @@ def project_bbox_2d(centroid_3d, bbox_3d):
 # and back project 2D centroid to 3D centroid(x,y,z)
 #
 def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):       
-    xyz_coor = np.zeros((centroids.shape[0],3))
+    xyz_coor = np.zeros((centroids.shape[0], 4))
     
     w = distance_data[0,:,:].shape[1]
     h = distance_data[0,:,:].shape[0]    
@@ -274,15 +263,16 @@ def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
     return xyz_coor
 
 
-def write_prediction_data_to_csv(centroids, timestamps, output_file):
+def write_prediction_data_to_csv(pred_result, timestamps, output_file):
 
     csv_file = open(output_file, 'w')
-    writer = csv.DictWriter(csv_file, ['timestamp', 'tx', 'ty', 'tz'])
+    writer = csv.DictWriter(csv_file, ['timestamp', 'tx', 'ty', 'tz', 'rx', 'ry', 'rz'])
 
     writer.writeheader()
 
-    for centroid, ts in zip(centroids, timestamps):        
-        writer.writerow({'timestamp': ts, 'tx': centroid[0], 'ty': centroid[1], 'tz': centroid[2]})
+    for pred, ts in zip(pred_result, timestamps):        
+        writer.writerow({'timestamp': ts, 'tx': pred[0], 'ty': pred[1], 'tz': pred[2],
+                        'rx': 0.0, 'ry': 0.0, 'rz': pred[3]})
 
 def load_model(weightsFile, use_regression):
     model = build_model(
@@ -311,7 +301,7 @@ def predict_point_cloud(model, points, cmap=None, use_regression=True):
     prediction = model.predict(model_input)
     
     centroid_2d, bbox_2d, _ = find_obstacle(prediction[0], INPUT_SHAPE)
-    centroid_3d = np.array([0, 0, 0])
+    pred = np.array([0, 0, 0, 0])    
     
     if centroid_2d is not None:        
         centroids = np.array(centroid_2d).reshape(1, 2)
@@ -322,12 +312,12 @@ def predict_point_cloud(model, points, cmap=None, use_regression=True):
         
         if use_regression:
             if not (centroid_3d[0] == 0. and centroid_3d[1] == 0.):  
-                centroid_3d, bbox_3d = find_bbox_3d(distance_data[0], height_data[0], prediction[0], bbox_2d, centroid_3d)     
+               pred, bbox_3d = find_bbox_3d(distance_data[0], height_data[0], prediction[0], bbox_2d, centroid_3d) 
         else:
-            centroid_3d = centroid_3d[0]
+            pred = centroid_3d[0]
     #print('predicted centroid: {}'.format(centroid_3d))
     
-    return centroid_3d
+    return pred
 
 # return predictions from rosbag
 def predict_rosbag(model, predict_file, use_regression=True):
@@ -380,7 +370,7 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir,
 
 
     # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
-    xyz_pred = np.zeros((all_images.shape[0],3))
+    xyz_pred = np.zeros((all_images.shape[0], 4))
     for prediction, file_prefix in zip(predictions, predict_data[1]):
         classes = prediction[:, 1]
 
@@ -397,25 +387,24 @@ def predict_lidar_frontview(model, predict_file, dir_prefix, export, output_dir,
            
         centroid, bbox, bbox_area = find_obstacle(prediction, INPUT_SHAPE)       
         if use_regression and not (centroid[0] == 0. and centroid[1] == 0.):
-            timestamp = os.path.basename(file_prefix).split('_')[0]                        
-            #if timestamp != '1490991699336895541':
-            #    continue
+            timestamp = os.path.basename(file_prefix).split('_')[0]                                   
                 
             print('timestamp={}'.format(timestamp))     
-            centroid_3d = back_project_2D_2_3D(np.array([centroid]), \
+            centroid_3d_array = back_project_2D_2_3D(np.array([centroid]), \
                                                 np.array([bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1]]).reshape((1,4)), \
                                                 np.expand_dims(all_images[ind,:,:,0], 0), \
                                                 np.expand_dims(all_images[ind,:,:,1], 0))
-            centroid_3d = centroid_3d[0]
+            centroid_3d = centroid_3d_array[0]
             
             print('centroid_2d={} projected centroid_3d={}'.format(centroid, centroid_3d))
             if not (centroid_3d[0] == 0. and centroid_3d[1] == 0.):                
-                centroid_3d, bbox_3d = find_bbox_3d(all_images[ind,:,:,0], all_images[ind,:,:,1], prediction, bbox, centroid_3d)
-                xyz_pred[ind, :] = centroid_3d
+                pred_result, bbox_3d = find_bbox_3d(all_images[ind,:,:,0], all_images[ind,:,:,1], prediction, bbox, centroid_3d)                
+                xyz_pred[ind, :] = pred_result
                 
-                if not np.array_equal(centroid_3d, [0, 0, 0]):
+                if not np.array_equal(pred_result, [0, 0, 0, 0]):
                     # project to 2d for visualization purpose only
-                    centroid, bbox = project_bbox_2d(centroid_3d, bbox_3d)                        
+                    centroid_3d = pred_result[:3]
+                    centroid, bbox = project_bbox_2d(pred_result, bbox_3d)                        
                     print('new centroid_2d={} centroid_3d={}'.format(centroid, centroid_3d))
                 else:
                     centroid = None

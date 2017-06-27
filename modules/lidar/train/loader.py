@@ -224,7 +224,7 @@ def get_data(csv_sources, parent_dir):
 
     obs_centroid_and_rotation = [txl, tyl, tzl, rxl, ryl, rzl]
     obs_size = [obsl, obsw, obsh]
-    return obs_centroid, pickle_dir_and_prefix, obs_size
+    return obs_centroid_and_rotation, pickle_dir_and_prefix, obs_size
 
 #
 # read input csv file to get the list of directories

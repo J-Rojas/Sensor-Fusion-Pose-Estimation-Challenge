@@ -8,7 +8,7 @@ import pandas as pd
 import h5py
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
                     NUM_CHANNELS, NUM_CLASSES, NUM_REGRESSION_OUTPUTS, \
-                    EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT
+                    EPOCHS, INPUT_SHAPE, K_NEGATIVE_SAMPLE_RATIO_WEIGHT, WEIGHT_BB
 from pretrain import calculate_population_weights
 
 import tensorflow as tf
@@ -68,12 +68,16 @@ def main():
     parser.add_argument('--modelFile', type=str, default="", help='Model Filename')
     parser.add_argument('--weightsFile', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
+    parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
 
     args = parser.parse_args()
     train_file = args.train_file
     validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
+    data_source = args.data_source    
+    use_regression = True if data_source == "lidar" else False
+    print('data_source={} use_regression={}'.format(data_source, use_regression))
 
     # calculate population statistic - they are only calculated for the training set since the weights will remain
     # unchanged in the validation/test set
@@ -88,17 +92,21 @@ def main():
             weightsFile = args.weightsFile
         model = load_model(args.modelFile, weightsFile,
                            INPUT_SHAPE, NUM_CLASSES,
+                           use_regression=use_regression,                           
                            obj_to_bkg_ratio=population_statistics_train[
                                                 'positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
                            avg_obj_size=population_statistics_train['average_area'],
+                           weight_bb=WEIGHT_BB,
                            metrics=metrics
                            )
     else:
         model = build_model(
             INPUT_SHAPE,
             NUM_CLASSES,
+            use_regression=use_regression,                        
             obj_to_bkg_ratio=population_statistics_train['positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
             avg_obj_size=population_statistics_train['average_area'],
+            weight_bb=WEIGHT_BB,
             metrics=metrics
         )
         # save the model
