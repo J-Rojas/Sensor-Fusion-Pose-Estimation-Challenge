@@ -212,7 +212,7 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_2)
 
     model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=dense_3)                   
-    model.compile(optimizer=Adam(),
+    model.compile(optimizer=Adam(lr=LEARNING_RATE),
                   loss="mean_squared_error", metrics=['mae'])
     
 
