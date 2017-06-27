@@ -4,6 +4,7 @@ import argparse
 import datetime
 import json
 import os
+import keras
 import keras.backend as K
 import tensorflow as tf
 import numpy as np
@@ -32,6 +33,23 @@ from pretrain import calculate_population_weights
 from common import pr_curve_plotter
 from common.csv_utils import foreach_dirset
 from train import LossHistory
+
+
+def load_fcn(model_file, weights_file, trainable):
+
+    with open(model_file, 'r') as jfile:
+        print('Loading weights file {}'.format(weights_file))
+        print("reading existing model and weights")
+        model = keras.models.model_from_json(json.loads(jfile.read()))
+        model.load_weights(weights_file)
+        for layer in model.layers:
+            layer.name = layer.name+model_file
+            layer.trainable = trainable
+       
+        model.compile(optimizer=Adam(lr=LEARNING_RATE),
+                      loss="mean_squared_error", metrics=['mae'])
+
+    return model
 
 def load_gt(indicies, centroid_rotation, gt, obs_size):
     
@@ -287,21 +305,30 @@ def main():
         
                         
     camera_net = load_model(args.camera_model, args.camera_weights,
-                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False)
+                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False,
+                       layer_name_ext="camera")
     cam_inp_layer = camera_net.input
     cam_out_layer = camera_net.output
 
     lidar_net = load_model(args.lidar_model, args.lidar_weights,
-                       INPUT_SHAPE, NUM_CLASSES, trainable=False)
+                       INPUT_SHAPE, NUM_CLASSES, trainable=False,
+                       layer_name_ext="lidar")
     lidar_inp_layer = lidar_net.input
     lidar_out_layer = lidar_net.output
     
-    cam_lidar_radar_net = build_FCN_cam_lidar(cam_inp_layer, lidar_inp_layer, 
+    if args.fcn_model != "":
+        weightsFile = args.fcn_model.replace('json', 'h5')
+        if args.fcn_weights != "":
+            weightsFile = args.fcn_weights
+        cam_lidar_radar_net = load_fcn(args.fcn_model, weightsFile, True)
+    else:    
+        cam_lidar_radar_net = build_FCN_cam_lidar(cam_inp_layer, lidar_inp_layer, 
                         cam_out_layer, lidar_out_layer)
-
-    # save the model
-    with open(os.path.join(outdir, 'fcn_model.json'), 'w') as outfile:
+        # save the model
+        with open(os.path.join(outdir, 'fcn_model.json'), 'w') as outfile:
             json.dump(cam_lidar_radar_net.to_json(), outfile)   
+
+
                                 
     train_data = get_data_and_ground_truth_matching_lidar_cam_frames(train_file, dir_prefix)
     val_data = get_data_and_ground_truth_matching_lidar_cam_frames(validation_file, dir_prefix)

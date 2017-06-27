@@ -148,17 +148,18 @@ def build_model(input_shape, num_classes, data_source,
 
     
 def load_model(model_file, weights_file, input_shape, num_classes,
-               obj_to_bkg_ratio=0.00016,
+               obj_to_bkg_ratio=0.00016, 
                avg_obj_size=1000,
                metrics=None,
-               trainable=True):
+               trainable=True,
+               layer_name_ext="" ):
     with open(model_file, 'r') as jfile:
         print('Loading weights file {}'.format(weights_file))
         print("reading existing model and weights")
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
         for layer in model.layers:
-            layer.name = layer.name+model_file
+            layer.name = layer.name+layer_name_ext
             layer.trainable = trainable
        
         model.compile(optimizer=Adam(lr=globals.LEARNING_RATE),

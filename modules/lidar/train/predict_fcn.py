@@ -29,7 +29,7 @@ from process.extract_rosbag_lidar import generate_lidar_2d_front_view
 from keras.models import model_from_json
 from keras.optimizers import Adam
 from common.csv_utils import foreach_dirset
-from train_fcn import data_generator_FCN
+from train_fcn import data_generator_FCN, load_fcn
 from predict import write_prediction_data_to_csv
 
 
@@ -45,21 +45,6 @@ def load_model(model_file, weights_file, trainable):
 
     return model
 
-def load_fcn(model_file, weights_file, trainable):
-
-    with open(model_file, 'r') as jfile:
-        print('Loading weights file {}'.format(weights_file))
-        print("reading existing model and weights")
-        model = keras.models.model_from_json(json.loads(jfile.read()))
-        model.load_weights(weights_file)
-        for layer in model.layers:
-            layer.name = layer.name+model_file
-            layer.trainable = trainable
-       
-        model.compile(optimizer=Adam(lr=LEARNING_RATE),
-                      loss="mean_squared_error", metrics=['mae'])
-
-    return model
 
 def get_predict_data_matching_lidar_cam_frames(csv_sources, parent_dir):
 
