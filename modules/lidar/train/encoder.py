@@ -11,7 +11,7 @@ import json
 import cv2
 import csv
 from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD, CAM_IMG_TOP
-from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
+from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS, NUM_REGRESSION_OUTPUTS
 from keras.utils import to_categorical
 from common.camera_model import CameraModel
 
@@ -174,7 +174,7 @@ def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_r
     bbox.append((tx+l/2., ty-w/2., tz+h/2.))
     bbox.append((tx+l/2., ty-w/2., tz-h/2.))
     
-    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS), dtype='float')    
+    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], NUM_REGRESSION_OUTPUTS), dtype='float')    
     
     if image is None:
         for ind, values in enumerate(bbox):
@@ -212,7 +212,7 @@ def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_r
                 c_prime_T = c_prime.transpose()                                
                 gt_regression[img_y, img_x, :] = np.reshape(c_prime_T, (-1))
               
-    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], globals.NUM_REGRESSION_OUTPUTS))
+    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], NUM_REGRESSION_OUTPUTS))
     
     labels_concat = np.concatenate((y, gt_regression), axis=1) 
     #return y

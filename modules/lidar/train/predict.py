@@ -16,7 +16,7 @@ from process.globals import X_MIN, Y_MIN, RES, RES_RAD, LIDAR_MIN_HEIGHT
 from scipy.ndimage.measurements import label
 from globals import IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, \
                     INPUT_SHAPE, BATCH_SIZE, \
-                    PREDICTION_FILE_NAME, PREDICTION_MD_FILE_NAME \
+                    PREDICTION_FILE_NAME, PREDICTION_MD_FILE_NAME, \
                     IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
 from loader import get_data, data_number_of_batches_per_epoch, data_generator_train, data_generator_predict
 import model as model_module
@@ -318,10 +318,11 @@ def load_model(modelFile, weightsFile, use_regression):
     defaultWeightsFile = modelFile.replace('json', 'h5')
     if weightsFile != "":
         defaultWeightsFile = weightsFile
-    model = model_module.load_model(modelFile, defaultWeightsFile, use_regression
-                       INPUT_SHAPE, NUM_CLASSES)
+    print modelFile, defaultWeightsFile
+    model = model_module.load_model(modelFile, defaultWeightsFile,
+                       INPUT_SHAPE, NUM_CLASSES, use_regression)
     model.trainable = False
-    model.load_weights(weightsFile)
+    model.load_weights(defaultWeightsFile)
     
     return model
     
@@ -515,7 +516,7 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
 
             cv2.imwrite(file_prefix + "_class.png", image)
     
-    if data_source == "lidar" and not use_regression:  
+    if data_source == "lidar":  
         xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])        
         return xyz_pred, timestamps
     elif data_source == "camera":
@@ -575,7 +576,7 @@ def main():
     print('predicting from ' + data_type)    
     
     # load model with weights
-    model = load_model(args.modelFile, args.weightsFile, use_regressio)
+    model = load_model(args.modelFile, args.weightsFile, use_regression)
         
     if data_type == 'frontview':
         xyz_pred, timestamps = predict(model, predict_file, dir_prefix, args.export, output_dir, data_source, camera_model, use_regression)        

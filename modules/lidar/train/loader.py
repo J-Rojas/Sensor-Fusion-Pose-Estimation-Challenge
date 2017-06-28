@@ -87,7 +87,8 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 # read in images/ground truths batch by batch
 #
 def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_prefix, 
-        BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, randomize=True, augment=True):
+        BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, 
+        data_source, camera_model=None, cache=None, randomize=True, augment=True):
     tx = obs_centroids_and_rotation[0]
     ty = obs_centroids_and_rotation[1]
     tz = obs_centroids_and_rotation[2]
@@ -131,7 +132,7 @@ def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_pr
 
             if not is_cache_avail:
                 load_data(batch_indicies, images, pickle_dir_and_prefix, data_source, NUM_CHANNELS)
-                load_label_data(batch_indicies, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh,
+                load_label_data(batch_indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh,
                                 (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES),
                                 data_source, camera_model)
                 if cache is not None:
@@ -233,7 +234,7 @@ def load_data(indicies, images, pickle_dir_and_prefix, data_source, num_channels
         print "invalid data source"
         exit(1)
 
-def load_lidar_label_data(indicies, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh, shape):
+def load_lidar_label_data(indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh, shape):
     batch_index = 0    
     
     for ind in indicies:
@@ -257,11 +258,11 @@ def load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh,
 
         batch_index += 1
 
-def load_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape, 
+def load_label_data(indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh, shape, 
                     data_source, camera_model=None):
 
     if data_source == "lidar":
-        load_lidar_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, shape)
+        load_lidar_label_data(indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh, shape)
     elif data_source == "camera":
         load_camera_label_data(indicies, obj_labels, tx, ty, tz, obsl, obsw, obsh, 
                                shape, camera_model)

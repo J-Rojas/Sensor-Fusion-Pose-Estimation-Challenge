@@ -13,7 +13,7 @@ from process.globals import CAM_IMG_BOTTOM, CAM_IMG_TOP
 from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
                     NUM_CHANNELS, NUM_CLASSES, EPOCHS, INPUT_SHAPE, \
                     K_NEGATIVE_SAMPLE_RATIO_WEIGHT, \
-                    IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS,
+                    IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS, \
                     NUM_REGRESSION_OUTPUTS, WEIGHT_BB
 from loader import get_data_and_ground_truth, data_generator_train, data_number_of_batches_per_epoch, \
                    filter_camera_data_and_gt
@@ -178,9 +178,9 @@ def main():
     else:
         model = build_model(
             input_shape,
-            NUM_CLASSES,
-            use_regression=use_regression,                        
+            NUM_CLASSES,                              
             data_source,
+            use_regression,     
             obj_to_bkg_ratio=population_statistics_train['positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
             avg_obj_size=population_statistics_train['average_area'],
             weight_bb=WEIGHT_BB,
