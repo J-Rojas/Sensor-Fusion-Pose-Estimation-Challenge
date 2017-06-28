@@ -22,6 +22,7 @@ from keras.layers import Input, concatenate, Reshape, BatchNormalization, Activa
 from keras.models import Model, Sequential
 from keras.optimizers import Adam
 from keras.layers.pooling import MaxPooling2D
+from keras.layers.merge import Add
 from common.camera_model import CameraModel
 from process.globals import CAM_IMG_BOTTOM, CAM_IMG_TOP
 from loader import get_data_and_ground_truth, data_generator_train, \
@@ -93,6 +94,7 @@ def data_generator_FCN(obs_centroids, obs_size,
     lidar_images = np.ndarray(shape=(batch_size, globals.IMG_HEIGHT, 
                     globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
     centroid_rotation_size = np.ndarray(shape=(batch_size, 7), dtype=float)
+    centroid_rz = np.ndarray(shape=(batch_size, 4), dtype=float)
     radar_ranges_angles = np.ndarray(shape=(batch_size, 2), dtype=float)
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix_cam, batch_size)
@@ -111,8 +113,9 @@ def data_generator_FCN(obs_centroids, obs_size,
             load_data(batch_indicies, cam_images, pickle_dir_and_prefix_cam, "camera", globals.NUM_CAM_CHANNELS)
             load_radar_data(batch_indicies, radar_ranges_angles, radar_data) 
             load_gt(batch_indicies, obs_centroids, centroid_rotation_size, obs_size)
+            np.copyto(centroid_rz, centroid_rotation_size[:,0:4])
              
-            yield ([cam_images, lidar_images, radar_ranges_angles], centroid_rotation_size)
+            yield ([cam_images, lidar_images, radar_ranges_angles], centroid_rz)
    
     
 def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir):
@@ -201,15 +204,12 @@ def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True)
 #    labels_bkg, labels_frg = tf.split(output_layer, 2, 2, name='split_'+net_name)
 #    reshaped_out = tf.reshape(labels_frg, input_layer.shape, name='reshaped_'+net_name)
 
-#    pool_out = MaxPooling2D()(output_layer)
     flatten_out = Flatten()(output_layer)
-    dense_1 = Dense(32, activation='relu', name='dense1_'+net_name,
+    dense_1 = Dense(128, activation='relu', name='dense1_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(flatten_out)
     dense_2 = Dense(64, activation='relu', name='dense2_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dense_1)
-    dense_3 = Dense(64, activation='relu', name='dense3_'+net_name,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense_2)                  
-    return dense_3
+    return dense_2
 
 def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=None, trainable=True):
 
@@ -217,19 +217,18 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "lidar")
     radar_inp = Input(shape=(2,), name='radar')
     
-
     concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
     
-    dense_1 = Dense(32, activation='relu', name='dense1',
+    dense_1_1 = Dense(4, activation='elu', name='dense1_1', 
                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
-    dropout_1 = Dropout(0.3)(dense_1)
-    dense_2 = Dense(64, activation='relu', name='dense2',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_1)
-    dropout_2 = Dropout(0.3)(dense_2)
-    dense_3 = Dense(7, activation='relu', name='dense3', use_bias=True,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_2)
+                   
+    dense_1_2 = Dense(4, activation='elu', name='dense1_2', 
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
+                   
+    dense_1 = Dense(4, activation='linear')(concatenate([dense_1_1, dense_1_2]))
+       
 
-    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=dense_3)                   
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=dense_1)                   
     model.compile(optimizer=Adam(lr=LEARNING_RATE),
                   loss="mean_squared_error", metrics=['mae'])
     
@@ -305,16 +304,16 @@ def main():
         
                         
     camera_net = load_model(args.camera_model, args.camera_weights,
-                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False,
+                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
                        layer_name_ext="camera")
     cam_inp_layer = camera_net.input
-    cam_out_layer = camera_net.output
+    cam_out_layer = camera_net.get_layer("conv3camera").output
 
     lidar_net = load_model(args.lidar_model, args.lidar_weights,
-                       INPUT_SHAPE, NUM_CLASSES, trainable=False,
+                       INPUT_SHAPE, NUM_CLASSES, trainable=True,
                        layer_name_ext="lidar")
     lidar_inp_layer = lidar_net.input
-    lidar_out_layer = lidar_net.output
+    lidar_out_layer = lidar_net.get_layer("conv3lidar").output
     
     if args.fcn_model != "":
         weightsFile = args.fcn_model.replace('json', 'h5')
