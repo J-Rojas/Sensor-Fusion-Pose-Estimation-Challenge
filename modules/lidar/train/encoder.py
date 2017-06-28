@@ -9,9 +9,12 @@ import argparse
 import math
 import json
 import cv2
-import globals
-from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD
+import csv
+from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD, CAM_IMG_TOP
+from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
 from keras.utils import to_categorical
+from common.camera_model import CameraModel
+
 
 
 print(Y_MIN, Y_MAX, RES_RAD)
@@ -215,7 +218,96 @@ def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_r
     #return y
     return labels_concat
 
+def generate_camera_bb(tx, ty, tz, l, w, h, camera_model):
 
+    bbox = []    
+    bbox.append([tx-l/2., ty+w/2., tz+h/2., 1.])
+    bbox.append([tx-l/2., ty+w/2., tz-h/2., 1.])
+    bbox.append([tx-l/2., ty-w/2., tz+h/2., 1.])
+    bbox.append([tx-l/2., ty-w/2., tz-h/2., 1.])
+    bbox.append([tx+l/2., ty+w/2., tz+h/2., 1.])
+    bbox.append([tx+l/2., ty+w/2., tz-h/2., 1.])
+    bbox.append([tx+l/2., ty-w/2., tz+h/2., 1.])
+    bbox.append([tx+l/2., ty-w/2., tz-h/2., 1.])
+    uv_bbox = camera_model.project_lidar_points_to_camera_2d(bbox)
+    uv_bbox = np.asarray(uv_bbox, dtype='int')
+ 
+    centroid = []
+    centroid.append([tx, ty, tz, 1.])
+    uv_centroid = camera_model.project_lidar_points_to_camera_2d(centroid)
+    uv_centroid = np.asarray(uv_centroid, dtype='int')
+    
+    d = []
+    for p in uv_bbox:
+        d.append(distance(uv_centroid[0], (p[0], p[1])))
+
+    d = np.asarray(d, dtype='int')
+    indices = np.argsort(d)
+    sorted_corners = uv_bbox[indices]
+    sorted_corners[:,1] = sorted_corners[:,1] - CAM_IMG_TOP
+    uv_centroid[:,1] = uv_centroid[:,1] - CAM_IMG_TOP
+    return sorted_corners, uv_centroid
+    
+def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model, method='outer_rect'):
+
+    uv_bbox_sorted, uv_centroid = generate_camera_bb(tx, ty, tz, l, w, h, camera_model)
+    r = 0
+        
+    if method == 'circle':
+        uv_bbox = uv_bbox_sorted[:4]
+        upper_left_y = uv_bbox.min(axis=0)[1]
+        upper_left_x = uv_bbox.min(axis=0)[0] 
+        lower_right_y = uv_bbox.max(axis=0)[1]
+        lower_right_x = uv_bbox.max(axis=0)[0] 
+        width = (lower_right_x - upper_left_x)
+        height = (lower_right_y - upper_left_y)
+        
+        r = min(width, height)
+        center_point_x = upper_left_x + width / 2
+        center_point_y = upper_left_y + height / 2
+        
+        upper_left_x = center_point_x - r / 2
+        upper_left_y = center_point_y - r / 2
+        lower_right_x = center_point_x + r / 2
+        lower_right_y = center_point_y + r / 2
+        
+        label = np.zeros(INPUT_SHAPE[:2])
+        for x in range(upper_left_x, lower_right_x, 1):
+            for y in range(upper_left_y, lower_right_y, 1):
+                if distance((uv_centroid[0][0], uv_centroid[0][1]), (x, y)) <= r:
+                    label[y, x] = 1
+         #print (upper_left_y, lower_right_y), (upper_left_x, lower_right_x)
+    else:      
+        if method == 'inner_rect':
+            uv_bbox = uv_bbox_sorted[:4]     
+        elif method == 'outer_rect':
+            uv_bbox = uv_bbox_sorted[-4:]   
+                              
+        upper_left_y = uv_bbox.min(axis=0)[1]
+        upper_left_x = uv_bbox.min(axis=0)[0] 
+        lower_right_y = uv_bbox.max(axis=0)[1]
+        lower_right_x = uv_bbox.max(axis=0)[0] 
+        width = (lower_right_x - upper_left_x)
+        height = (lower_right_y - upper_left_y)
+        
+        x_margin = width/4
+        y_margin = height/4
+        #print x_margin, y_margin
+        
+        upper_left_y -= y_margin
+        upper_left_x -= x_margin
+        lower_right_y += y_margin
+        lower_right_x += x_margin
+        
+        label = np.zeros(INPUT_SHAPE[:2])
+        label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
+
+    y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle  
+    #print np.sum(y[:,0]) , np.sum(y[:,1]), y.shape, np.sum(y[:,0])+np.sum(y[:,1])
+    
+    return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox_sorted, uv_centroid, r
+
+    
 def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
     centroid = project_2d(tx, ty, tz)
     #print('Centroid: {}'.format(centroid))
@@ -286,11 +378,19 @@ def main():
     parser.add_argument("--input_dir", help="Input directory.")
     parser.add_argument("--output_dir", help="Output directory.")
     parser.add_argument("--shape", help="bounding box shape: circle, outer_rect, inner_rect", default="circle")
+    parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
+    parser.add_argument('--camera_model', type=str, help='Camera calibration yaml')
+    parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
+    parser.add_argument('--metadata', type=str, help='path/filename to metadata.csv')
 
     args = parser.parse_args()
     input_dir = args.input_dir
     output_dir = args.output_dir
     shape = args.shape
+    data_source = args.data_source
+    camera_model_file = args.camera_model
+    lidar2cam_model_file = args.lidar2cam_model
+    metadata_fname = args.metadata
 
     if not os.path.isdir(input_dir) or not os.path.isdir(output_dir):
         print('input_dir or output_dir does not exist')
@@ -300,30 +400,106 @@ def main():
         print('shape must be one of the following: circle, outer_rect, inner_rect')
         sys.exit()
 
-    #input_dir needs to contain the following:
-    #obs_poses_interp_transform.csv, and a sub directory lidar_360 that contains lidar images    
-    obs_file = os.path.join(input_dir, 'obs_poses_interp_transform.csv')
-    if not os.path.exists(obs_file):
-        print('missing obs_poses_interp_transform.csv')
-        sys.exit()
+    if data_source == "lidar":
+        #input_dir needs to contain the following:
+        #obs_poses_interp_transform.csv, and a sub directory lidar_360 that contains lidar images    
+        obs_file = os.path.join(input_dir, 'obs_poses_interp_transform.csv')
+        if not os.path.exists(obs_file):
+            print('missing obs_poses_interp_transform.csv')
+            sys.exit()
+            
+        obs_df = pd.read_csv(obs_file, index_col=['timestamp'])    
+        #print(obs_df)
+
+        lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))
+        l, w, h = (4.2418, 1.4478, 1.5748)
+
+        for f in lidar_img_dir:
+            if f.endswith('_distance.png'):
+                ts = int(f.split('_')[0])
+
+                if ts in list(obs_df.index):
+                    tx = obs_df.loc[ts]['tx']
+                    ty = obs_df.loc[ts]['ty']
+                    tz = obs_df.loc[ts]['tz']
+                    infile = os.path.join(input_dir, 'lidar_360', f)
+                    outfile = os.path.join(output_dir, f.split(".")[0] + '_bb.png')
+                    draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
+
+    elif data_source == "camera":
+       if not camera_model_file:
+            print "need to enter camera calibration yaml"
+            exit(1)
+       if not lidar2cam_model_file:
+            print "need to enter lidar to camera calibration yaml"
+            exit(1)               
+       if not metadata_fname:
+            print "need to enter metadata.csv file path/name"
+            exit(1)
+            
+       with open(metadata_fname) as metafile:
+            records = csv.DictReader(metafile)
+            mdr = []
+            for record in records:
+                mdr.append(record)
+            
+            print mdr[0]
+            l = float(mdr[0]['l'])
+            w = float(mdr[0]['w'])
+            h = float(mdr[0]['h'])
+                    
+       image_width = IMG_CAM_WIDTH
+       image_height = IMG_CAM_HEIGHT
+       input_shape = (IMG_CAM_HEIGHT, IMG_CAM_WIDTH, NUM_CAM_CHANNELS)  
+       num_channels = NUM_CAM_CHANNELS
         
-    obs_df = pd.read_csv(obs_file, index_col=['timestamp'])    
-    #print(obs_df)
+       camera_model = CameraModel()
+       camera_model.load_camera_calibration(camera_model_file, lidar2cam_model_file)
+       
+       obs_file = os.path.join(input_dir, 'obs_poses_camera.csv')
+       if not os.path.exists(obs_file):
+            print('missing obs_poses_camera.csv')
+            sys.exit()
+            
+       obs_df_cam = pd.read_csv(obs_file, index_col=['timestamp'])    
+       #print(obs_df_cam)
 
-    lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))
-    l, w, h = (4.2418, 1.4478, 1.5748)
 
-    for f in lidar_img_dir:
-        if f.endswith('_distance.png'):
-            ts = int(f.split('_')[0])
+       cam_img_dir = os.listdir(os.path.join(input_dir, 'camera'))
 
-            if ts in list(obs_df.index):
-                tx = obs_df.loc[ts]['tx']
-                ty = obs_df.loc[ts]['ty']
-                tz = obs_df.loc[ts]['tz']
-                infile = os.path.join(input_dir, 'lidar_360', f)
-                outfile = os.path.join(output_dir, f.split(".")[0] + '_bb.png')
-                draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
+       for f in cam_img_dir:
+            if f.endswith('_image.png'):
+                ts = int(f.split('_')[0])
+
+                if ts in list(obs_df_cam.index):
+                    tx = obs_df_cam.loc[ts]['tx']
+                    ty = obs_df_cam.loc[ts]['ty']
+                    tz = obs_df_cam.loc[ts]['tz']
+                    infile = os.path.join(input_dir, 'camera', f)
+                    outfile = os.path.join(output_dir, f.split(".")[0] + '_cam_bb.png')
+                    y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox, uv_centroid, r = \
+                            generate_camera_label(tx, ty, tz, l, w, h, (image_height, image_width), camera_model, shape)
+                    
+                    img = cv2.imread(infile)
+                    #if 0 < upper_left_x < image_width and 0< upper_left_y < image_height and  \
+                    #    0 < lower_right_x < image_width and 0< lower_right_y < image_height:
+                        #print img.shape
+                        #print tx, ty, tz
+                        #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
+                        #print y.shape
+                    for p in uv_bbox:
+                        cv2.circle(img, (p[0], p[1]), 2, (0, 0, 255), thickness=-1)
+                    cv2.circle(img, (uv_centroid[0][0], uv_centroid[0][1]), 2, (255, 0, 255), thickness=-1) 
+                     
+                    if shape == "circle":  
+                        cv2.circle(img, (uv_centroid[0][0], uv_centroid[0][1]), int(r), (0, 255, 255), thickness=2) 
+                    else:  
+                        cv2.rectangle(img, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), (0, 255, 0), 5)
+                    
+                    
+                    cv2.imwrite(outfile, img)
+                    #y = y*255
+                    #cv2.imwrite(outfile + "_label.jpg",(np.reshape(y, (image_height, image_width, 2)))[:,:,1])
 
 
 if __name__ == '__main__':

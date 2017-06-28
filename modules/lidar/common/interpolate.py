@@ -43,7 +43,7 @@ class TrackletInterpolater:
 
         tracket_parser.put_timestamps_with_frame_ids(tracklet, source_timestamps)
 
-        return self.interpolate(tracklet, dest_timestamps)
+        return self.interpolate(tracklet, dest_timestamps), tracklet
 
     def interpolate_from_csv(self, csv_file, timestamps):
 

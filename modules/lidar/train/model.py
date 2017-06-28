@@ -89,9 +89,9 @@ def custom_weighted_loss(input_shape, use_regression, weight_bb, obj_to_bkg_rati
         return loss
     
     return custom_loss
-    
-def build_model(input_shape, num_classes,
-                use_regression=True,
+
+def build_model(input_shape, num_classes, data_source,
+                use_regression=False,
                 obj_to_bkg_ratio=0.00016,
                 avg_obj_size=1000,
                 weight_bb=0.01,
@@ -101,11 +101,14 @@ def build_model(input_shape, num_classes,
     # set channels last format
     K.set_image_data_format('channels_last')
 
-    inputs = Input(shape=input_shape, name='input')
-    flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
-    normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
-    unflatten_input = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
-    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(unflatten_input)
+    post_normalized = inputs = Input(shape=input_shape, name='input')
+    if globals.USE_SAMPLE_WISE_BATCH_NORMALIZATION:
+        flatten_input = Reshape((-1, input_shape[2]), name='flatten_input')(inputs)
+        normalized = BatchNormalization(name='normalize', axis=1)(flatten_input)
+        post_normalized = Reshape((input_shape[0], input_shape[1], input_shape[2]), name='unflatten_input')(normalized)
+    if globals.USE_FEATURE_WISE_BATCH_NORMALIZATION:
+        post_normalized = BatchNormalization(name='normalize', axis=-1)(post_normalized)
+    inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(post_normalized)
     conv1 = Conv2D(4, 5, strides=(2,4), activation='relu', name='conv1', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
     conv2 = Conv2D(6, 5, strides=(2,2), activation='relu', name='conv2',
@@ -120,11 +123,21 @@ def build_model(input_shape, num_classes,
     # classification task
     deconv5a = Conv2DTranspose(8, 5, strides=(2,2), activation='relu', name='deconv5a',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
+                               
     deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
+            
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(2,4), name='deconv6a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5a)
-    deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+
+    if data_source == "lidar":
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6a)
+    elif data_source == "camera":                          
+        deconv6a_crop = Cropping2D(cropping=((0, 0), (0, 4)))(deconv6a)
+    else:
+        print "invalid data source"
+        exit(1)
+        
     deconv6a_flatten = Reshape((-1, num_classes), name='deconv6a_flatten')(deconv6a_crop)
     softmax = Activation('softmax',name='softmax')(deconv6a_flatten)
     output = classification_output = Lambda(lambda x: K.clip(x, K.epsilon(), 1), name='classification_output')(softmax)
@@ -158,6 +171,7 @@ def load_model(model_file, weights_file, input_shape, num_classes, use_regressio
                weight_bb=0.01,
                metrics=None):
     with open(model_file, 'r') as jfile:
+        print('Loading weights file {}'.format(weights_file))
         print("reading existing model and weights")
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
