@@ -98,10 +98,10 @@ def data_generator_FCN(obs_centroids, obs_size,
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix_cam, batch_size)
 
     indicies_list = np.arange(len(tx))
-
+    
     while 1:            
 
-        indicies = generate_index_list(indicies_list, False, num_batches, batch_size)
+        indicies = generate_index_list(indicies_list, True, num_batches, batch_size)
 
         for batch in range(num_batches):
 
@@ -203,11 +203,11 @@ def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True)
 
 #    pool_out = MaxPooling2D()(output_layer)
     flatten_out = Flatten()(output_layer)
-    dense_1 = Dense(32, activation='relu', name='dense1_'+net_name, use_bias=True,
+    dense_1 = Dense(32, activation='relu', name='dense1_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(flatten_out)
-    dense_2 = Dense(64, activation='relu', name='dense2_'+net_name, use_bias=True,
+    dense_2 = Dense(64, activation='relu', name='dense2_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dense_1)
-    dense_3 = Dense(64, activation='relu', name='dense3_'+net_name, use_bias=True,
+    dense_3 = Dense(64, activation='relu', name='dense3_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dense_2)                  
     return dense_3
 
@@ -220,10 +220,10 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
 
     concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
     
-    dense_1 = Dense(32, activation='relu', name='dense1', use_bias=True,
+    dense_1 = Dense(32, activation='relu', name='dense1',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
     dropout_1 = Dropout(0.3)(dense_1)
-    dense_2 = Dense(64, activation='relu', name='dense2', use_bias=True,
+    dense_2 = Dense(64, activation='relu', name='dense2',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_1)
     dropout_2 = Dropout(0.3)(dense_2)
     dense_3 = Dense(7, activation='relu', name='dense3', use_bias=True,
