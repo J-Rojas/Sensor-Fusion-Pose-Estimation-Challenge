@@ -61,7 +61,46 @@ def recall(y_true, y_pred):
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
 
+# workaround -- will remove once regression is supported with camera model
+def precision_no_regression(y_true, y_pred):
+    """Precision metric.
+    Only computes a batch-wise average of precision.
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
 
+    #y_pred = tf.Print(y_pred, ["preds", y_pred])
+    #y_true = tf.Print(y_true, ["labels", y_true])
+    
+    y_true_obj = y_true
+    y_pred_obj = y_pred 
+
+    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
+
+    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
+
+def recall_no_regression(y_true, y_pred):
+    """Recall metric.
+    Only computes a batch-wise average of recall.
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
+    y_true_obj = y_true
+    y_pred_obj = y_pred   
+
+    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
+
+    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
+    
 class LossHistory(Callback):
     def on_train_begin(self, logs={}):
         self.losses = []
@@ -159,8 +198,11 @@ def main():
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, \
                                     (image_height, image_width), data_source, camera_model)
     print("Train statistics: ", population_statistics_train)
-
-    metrics = [recall, precision]
+    
+    if use_regression:
+        metrics = [recall, precision]
+    else:
+        metrics = [recall_no_regression, precision_no_regression]
 
     if args.modelFile != "":
         weightsFile = args.modelFile.replace('json', 'h5')
@@ -220,14 +262,14 @@ def main():
                     train_data[0], train_data[2], train_data[1],
                     BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
                     data_source, camera_model,
-                    cache=cache_train
+                    cache=cache_train, use_regression=use_regression
                 ),  # generator
                 n_batches_per_epoch_train,  # number of batches per epoch
                 validation_data=data_generator_train(
                     val_data[0], val_data[2], val_data[1],
                     BATCH_SIZE, image_height, image_width, num_channels, NUM_CLASSES,
                     data_source, camera_model,
-                    cache=cache_val, augment=False
+                    cache=cache_val, augment=False, use_regression=use_regression
                 ),
                 validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
                 epochs=EPOCHS,
@@ -240,13 +282,13 @@ def main():
                 train_data[0], train_data[2], train_data[1],
                 len(train_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
                 data_source, camera_model,
-                cache=cache_train
+                cache=cache_train, use_regression=use_regression
             ))
             next(data_generator_train(
                 val_data[0], val_data[2], val_data[1],
                 len(val_data[0][0]), image_height, image_width, num_channels, NUM_CLASSES,
                 data_source, camera_model,
-                cache=cache_val, augment=False
+                cache=cache_val, augment=False, use_regression=use_regression
             ))
 
             print(len(cache_train['data']), len(cache_train['labels']))

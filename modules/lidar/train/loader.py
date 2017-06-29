@@ -28,7 +28,7 @@ def data_number_of_batches_per_epoch(data, BATCH_SIZE):
 #
 # rotate images/labels randomly
 #
-def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height):
+def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height, use_regression):
     
     # get bounding box of object in 2D
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
@@ -40,13 +40,13 @@ def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height
     while upper_left_x+rotate_by <= img_width <= lower_right_x+rotate_by:
         rotate_by = randrange(0, img_width)
     
-    #print "rotate_by: " + str(rotate_by)
-
-    label_reshaped = np.reshape(label, (globals.IMG_HEIGHT, globals.IMG_WIDTH, \
-                                globals.NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS))
+    #print "rotate_by: " + str(rotate_by)    
+    label_dim = globals.NUM_CLASSES
+    if use_regression:
+        label_dim = globals.NUM_CLASSES + globals.NUM_REGRESSION_OUTPUTS
+    label_reshaped = np.reshape(label, (img_height, img_width, label_dim))
     rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
-    rotated_flatten_label = np.reshape(rotated_label, (globals.IMG_HEIGHT*globals.IMG_WIDTH, \
-                                       globals.NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS))
+    rotated_flatten_label = np.reshape(rotated_label, (img_height*img_width, label_dim))
     rotated_img = np.roll(image, rotate_by, axis=1)
     
     # copy back rotated parts to original images/label
@@ -56,14 +56,14 @@ def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height
 # 
 # rotate data in a given batch
 #
-def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh, img_width, img_height):
+def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh, img_width, img_height, use_regression):
 
     img_ind = 0
     for ind in indicies:
 
         obj_center = [tx[ind], ty[ind], tz[ind]]
         obj_size = [obsl[ind], obsw[ind], obsh[ind]]
-        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size, img_width, img_height)
+        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size, img_width, img_height, use_regression)
 
         img_ind += 1
 
@@ -88,7 +88,7 @@ def generate_index_list(indicies_list, randomize, num_batches, batch_size):
 #
 def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_prefix, 
         BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS, NUM_CLASSES, 
-        data_source, camera_model=None, cache=None, randomize=True, augment=True):
+        data_source, camera_model=None, cache=None, randomize=True, augment=True, use_regression=True):
     tx = obs_centroids_and_rotation[0]
     ty = obs_centroids_and_rotation[1]
     tz = obs_centroids_and_rotation[2]
@@ -120,8 +120,10 @@ def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_pr
         is_cache_avail = cache['data'] is not None and cache['labels'] is not None
         if not is_cache_avail:
             cache['data'] = np.ndarray(shape=(len(pickle_dir_and_prefix), IMG_HEIGHT, IMG_WIDTH, NUM_CHANNELS), dtype=float)
-            cache['labels'] = np.ndarray(shape=(len(tx), IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
-
+            if data_source == "lidar":
+                cache['labels'] = np.ndarray(shape=(len(tx), IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES+globals.NUM_REGRESSION_OUTPUTS), dtype=np.uint8)
+            elif data_source == "camera":
+                cache['labels'] = np.ndarray(shape=(len(tx), IMG_HEIGHT*IMG_WIDTH, NUM_CLASSES), dtype=np.uint8)
     while 1:
 
         indicies = generate_index_list(indicies_list, randomize, num_batches, BATCH_SIZE)
@@ -135,6 +137,7 @@ def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_pr
                 load_label_data(batch_indicies, images, obj_labels, tx, ty, tz, rx, ry, rz, obsl, obsw, obsh,
                                 (IMG_HEIGHT, IMG_WIDTH, NUM_CLASSES),
                                 data_source, camera_model)
+                                
                 if cache is not None:
                     # save to cache
                     i = 0
@@ -151,7 +154,7 @@ def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_pr
                     i += 1
 
             if augment:
-                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh, IMG_WIDTH, IMG_HEIGHT)
+                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh, IMG_WIDTH, IMG_HEIGHT, use_regression)
 
             yield (images, obj_labels)
 
@@ -444,7 +447,7 @@ if __name__ == "__main__":
     # generate data in batches
     generator = data_generator_train(obs_centroids, obs_size, pickle_dir_and_prefix, 
         globals.BATCH_SIZE, globals.IMG_HEIGHT, globals.IMG_WIDTH, globals.NUM_CHANNELS, 
-        globals.NUM_CLASSES, randomize=True)   
+        globals.NUM_CLASSES, randomize=True, use_regression=False)   
     
     images, obj_labels = next(generator)
     

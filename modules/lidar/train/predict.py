@@ -5,7 +5,7 @@ import json
 import datetime
 import numpy as np
 import cv2
-import math
+from math import sin, cos, atan2, pi
 import csv
 import rosbag
 import sensor_msgs.point_cloud2
@@ -111,21 +111,21 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
             height = height_img[img_y, img_x]
             theta = (img_x + X_MIN) * RES_RAD[1]
             phi = (img_y + Y_MIN) * RES_RAD[0] 
-            px = distance * math.cos(theta)
-            py = - distance * math.sin(theta)
+            px = distance * cos(theta)
+            py = - distance * sin(theta)
             pz = height
             p = np.array([px, py, pz])
             c_prime = np.reshape(y_pred[img_y, img_x, 2:], (8, 3))
             
             #rotation around z axis                                                     
-            rot_z = np.array([[math.cos(theta), -math.sin(theta), 0.0], 
-                              [math.sin(theta), math.cos(theta),  0.0],
+            rot_z = np.array([[cos(theta), -sin(theta), 0.0], 
+                              [sin(theta), cos(theta),  0.0],
                               [0.0,             0.0,              1.0]])  
                             
             #rotation around y axis  
-            rot_y = np.array([[math.cos(phi), 0.0, math.sin(phi)],
+            rot_y = np.array([[cos(phi), 0.0, sin(phi)],
                               [0.0,           1.0, 0.0],
-                              [-math.sin(phi),0.0, math.cos(phi)]])
+                              [-sin(phi),0.0, cos(phi)]])
                            
             rot = np.matmul(rot_z, rot_y)            
             c = (np.matmul(rot, c_prime.transpose())).transpose() + p  #shape: (8, 3)
@@ -135,7 +135,7 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
                 bbox.append(c)
    
     if len(bbox) == 0:
-        return np.array([0.0, 0.0, 0.0, 0.0]), None
+        return np.zeros((7)), None
         
     bbox = np.array(bbox)
     candidate_bbox = np.zeros((8, 3))  
@@ -163,7 +163,7 @@ def find_bbox_3d(distance_img, height_img, y_pred, bbox_2d, centroid_3d):
     
     candidate_bbox = bbox.mean(axis=0)   
     #print('candidate_bbox: {}'.format(candidate_bbox))
-    pred = np.array([0.0, 0.0, 0.0, 0.0])
+    pred = np.zeros((7))
     pred[:3] = np.mean(candidate_bbox, 0)
    
     # estimate obstacle orientation and size
@@ -282,8 +282,8 @@ def back_project_2D_2_3D(centroids, bboxes, distance_data, height_data):
             # increase  to approximate centroid - not surface of car
             distance += 0.75
             
-            xyz_coor[i,0] = distance * math.cos(theata)
-            xyz_coor[i,1] = - distance * math.sin(theata)
+            xyz_coor[i,0] = distance * cos(theata)
+            xyz_coor[i,1] = - distance * sin(theata)
             xyz_coor[i,2] = height
         
         #print('centroid: {}, height: {}, theta: {}, x: {}, y: {}, z: {}'.
@@ -318,7 +318,7 @@ def load_model(modelFile, weightsFile, use_regression):
     defaultWeightsFile = modelFile.replace('json', 'h5')
     if weightsFile != "":
         defaultWeightsFile = weightsFile
-    print modelFile, defaultWeightsFile
+
     model = model_module.load_model(modelFile, defaultWeightsFile,
                        INPUT_SHAPE, NUM_CLASSES, use_regression)
     model.trainable = False
@@ -516,8 +516,9 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
 
             cv2.imwrite(file_prefix + "_class.png", image)
     
-    if data_source == "lidar":  
-        xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])        
+    if data_source == "lidar": 
+        if not use_regression:
+            xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])        
         return xyz_pred, timestamps
     elif data_source == "camera":
         return centroids, timestamps
