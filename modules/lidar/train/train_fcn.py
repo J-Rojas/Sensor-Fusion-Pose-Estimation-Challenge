@@ -16,7 +16,7 @@ from globals import BATCH_SIZE, IMG_HEIGHT, IMG_WIDTH, \
                     K_NEGATIVE_SAMPLE_RATIO_WEIGHT, LEARNING_RATE, \
                     IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS, INPUT_SHAPE_CAM
 
-from keras.callbacks import ModelCheckpoint, TensorBoard, Callback
+from keras.callbacks import ModelCheckpoint, TensorBoard, Callback, ReduceLROnPlateau
 from keras.layers.core import Dense, Flatten, Dropout
 from keras.layers import Input, concatenate, Reshape, BatchNormalization, Activation, Lambda, Concatenate
 from keras.models import Model, Sequential
@@ -94,7 +94,8 @@ def data_generator_FCN(obs_centroids, obs_size,
     lidar_images = np.ndarray(shape=(batch_size, globals.IMG_HEIGHT, 
                     globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
     centroid_rotation_size = np.ndarray(shape=(batch_size, 7), dtype=float)
-    centroid_rz = np.ndarray(shape=(batch_size, 4), dtype=float)
+    centroid = np.ndarray(shape=(batch_size, 3), dtype=float)
+    rz = np.ndarray(shape=(batch_size), dtype=float)
     radar_ranges_angles = np.ndarray(shape=(batch_size, 2), dtype=float)
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix_cam, batch_size)
@@ -113,9 +114,10 @@ def data_generator_FCN(obs_centroids, obs_size,
             load_data(batch_indicies, cam_images, pickle_dir_and_prefix_cam, "camera", globals.NUM_CAM_CHANNELS)
             load_radar_data(batch_indicies, radar_ranges_angles, radar_data) 
             load_gt(batch_indicies, obs_centroids, centroid_rotation_size, obs_size)
-            np.copyto(centroid_rz, centroid_rotation_size[:,0:4])
-             
-            yield ([cam_images, lidar_images, radar_ranges_angles], centroid_rz)
+            np.copyto(centroid, centroid_rotation_size[:,0:3])
+            np.copyto(rz, centroid_rotation_size[:,3]) 
+            
+            yield ([cam_images, lidar_images, radar_ranges_angles], [centroid, rz])
    
     
 def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir):
@@ -219,39 +221,23 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     
     concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
     
-    dense_1_1 = Dense(4, activation='elu', name='dense1_1', 
+    # output for centroid
+    dense_1_1 = Dense(3, activation='elu', name='dense1_1', 
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)                  
+    dense_1_2 = Dense(3, activation='elu', name='dense1_2', 
                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
-                   
-    dense_1_2 = Dense(4, activation='elu', name='dense1_2', 
+    d_1 = Dense(3, activation='linear', name='d1')(concatenate([dense_1_1, dense_1_2]))
+     
+    # output for rotation   
+    dense_2_1 = Dense(1, activation='elu', name='dense2_1', 
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)                  
+    dense_2_2 = Dense(1, activation='elu', name='dense2_2', 
                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
-                   
-    dense_1 = Dense(4, activation='linear')(concatenate([dense_1_1, dense_1_2]))
-       
+    d_2 = Dense(1, activation='linear', name='d2')(concatenate([dense_2_1, dense_2_2]))
 
-    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=dense_1)                   
+
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1, d_2])                   
     model.compile(optimizer=Adam(lr=LEARNING_RATE),
-                  loss="mean_squared_error", metrics=['mae'])
-    
-
-    print(model.summary())
-    return model
-
-def build_FCN_2(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=None, trainable=True):
-
-    cam_inp = Input(shape=(BATCH_SIZE,6), name='input_cam')
-    lidar_inp = Input(shape=(BATCH_SIZE,6), name='input_lidar')
-    
-    concat_input = concatenate([cam_inp, lidar_inp])
-    
-    dense_1 = Dense(32, activation='relu', name='dense1', use_bias=True,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
-    dense_2 = Dense(64, activation='relu', name='dense2', use_bias=True,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense_1)
-    dense_3 = Dense(6, activation='relu', name='dense3', use_bias=True,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense_2)
-
-    model = Model(inputs=[cam_inp, lidar_inp], outputs=dense_3)                   
-    model.compile(optimizer=Adam(),
                   loss="mean_squared_error", metrics=['mae'])
     
 
@@ -345,6 +331,9 @@ def main():
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'),
                               write_graph=True, write_images=False)
     loss_history = LossHistory()
+    
+    lr_schedule = ReduceLROnPlateau(monitor='train_loss', factor=0.2, patience=3, verbose=1, \
+                                mode='auto', epsilon=0.01, cooldown=0, min_lr=0.0000001)
 
     try:
 
@@ -360,7 +349,7 @@ def main():
             ),
             validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
             epochs=EPOCHS,
-            callbacks=[checkpointer, tensorboard, loss_history],
+            callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
             verbose=1
         )
         
