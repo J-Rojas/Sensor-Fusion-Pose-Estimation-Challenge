@@ -44,12 +44,12 @@ def load_fcn(model_file, weights_file, trainable):
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
         for layer in model.layers:
-            layer.name = layer.name+model_file
             layer.trainable = trainable
        
         model.compile(optimizer=Adam(lr=LEARNING_RATE),
                       loss="mean_squared_error", metrics=['mae'])
-
+                      
+    print(model.summary())
     return model
 
 def load_gt(indicies, centroid_rotation, gt, obs_size):
@@ -117,7 +117,7 @@ def data_generator_FCN(obs_centroids, obs_size,
             np.copyto(centroid, centroid_rotation_size[:,0:3])
             np.copyto(rz, centroid_rotation_size[:,3]) 
             
-            yield ([cam_images, lidar_images, radar_ranges_angles], [centroid, rz])
+            yield ([cam_images, lidar_images, radar_ranges_angles], [centroid])
    
     
 def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir):
@@ -206,11 +206,18 @@ def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True)
 #    labels_bkg, labels_frg = tf.split(output_layer, 2, 2, name='split_'+net_name)
 #    reshaped_out = tf.reshape(labels_frg, input_layer.shape, name='reshaped_'+net_name)
 
+    # cam_net_out is too big. apply max_pooling
+    if net_name=="cam":
+        output_layer = MaxPooling2D(pool_size=(2, 1), strides=None, padding='valid', data_format=None)(output_layer)
+
     flatten_out = Flatten()(output_layer)
+    dropout_1 = Dropout(0.2)(flatten_out)
     dense_1 = Dense(128, activation='relu', name='dense1_'+net_name,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(flatten_out)
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_1)
+    dropout_2 = Dropout(0.2)(dense_1)             
     dense_2 = Dense(64, activation='relu', name='dense2_'+net_name,
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense_1)
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_2)
+                   
     return dense_2
 
 def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=None, trainable=True):
@@ -218,25 +225,28 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     cam_net_out = build_FCN(cam_inp, cam_net_out, "cam")
     lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "lidar")
     radar_inp = Input(shape=(2,), name='radar')
-    
+        
     concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
+    concat_normalized = BatchNormalization(name='normalize', axis=-1)(concat_input)
+    dense = Dense(64, activation='relu', name='fcn.dense',
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_normalized)
     
     # output for centroid
     dense_1_1 = Dense(3, activation='elu', name='dense1_1', 
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)                  
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense)                  
     dense_1_2 = Dense(3, activation='elu', name='dense1_2', 
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense)
     d_1 = Dense(3, activation='linear', name='d1')(concatenate([dense_1_1, dense_1_2]))
      
     # output for rotation   
     dense_2_1 = Dense(1, activation='elu', name='dense2_1', 
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)                  
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense)                  
     dense_2_2 = Dense(1, activation='elu', name='dense2_2', 
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_input)
+                   kernel_initializer='random_uniform', bias_initializer='zeros')(dense)
     d_2 = Dense(1, activation='linear', name='d2')(concatenate([dense_2_1, dense_2_2]))
 
 
-    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1, d_2])                   
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1])                   
     model.compile(optimizer=Adam(lr=LEARNING_RATE),
                   loss="mean_squared_error", metrics=['mae'])
     
@@ -289,15 +299,25 @@ def main():
         
         
                         
-    camera_net = load_model(args.camera_model, args.camera_weights,
+#    camera_net = load_model(args.camera_model, args.camera_weights,
+#                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
+#                       layer_name_ext="camera")
+                       
+    camera_net = build_model(
                        INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
-                       layer_name_ext="camera")
+                       data_source="camera", layer_name_ext="camera")                       
     cam_inp_layer = camera_net.input
     cam_out_layer = camera_net.get_layer("conv3camera").output
+    
 
-    lidar_net = load_model(args.lidar_model, args.lidar_weights,
+#    lidar_net = load_model(args.lidar_model, args.lidar_weights,
+#                       INPUT_SHAPE, NUM_CLASSES, trainable=True,
+#                       layer_name_ext="lidar")
+                       
+    lidar_net = build_model(
                        INPUT_SHAPE, NUM_CLASSES, trainable=True,
-                       layer_name_ext="lidar")
+                       data_source="lidar", layer_name_ext="lidar")
+                       
     lidar_inp_layer = lidar_net.input
     lidar_out_layer = lidar_net.get_layer("conv3lidar").output
     
@@ -332,8 +352,8 @@ def main():
                               write_graph=True, write_images=False)
     loss_history = LossHistory()
     
-    lr_schedule = ReduceLROnPlateau(monitor='train_loss', factor=0.2, patience=3, verbose=1, \
-                                mode='auto', epsilon=0.01, cooldown=0, min_lr=0.0000001)
+    lr_schedule = ReduceLROnPlateau(monitor='mean_absolute_error', factor=0.2, patience=3, verbose=1, \
+                                mode='auto', epsilon=.2, cooldown=0, min_lr=0.0000001)
 
     try:
 
