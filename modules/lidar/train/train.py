@@ -21,6 +21,12 @@ from model import build_model, load_model
 from pretrain import calculate_population_weights
 from common import pr_curve_plotter
 
+def custom_mse(y_true, y_pred):       
+    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        
+    return K.mean(K.square(y_true_bb - y_pred_bb), axis=-1)
+        
 def custom_precision(use_regression):
     def precision(y_true, y_pred):
         """Precision metric.
@@ -171,7 +177,9 @@ def main():
     print("Train statistics: ", population_statistics_train)
         
     metrics = [custom_recall(use_regression), custom_precision(use_regression)]
-
+    if use_regression:
+        metrics.append(custom_mse)
+        
     if args.modelFile != "":
         weightsFile = args.modelFile.replace('json', 'h5')
         if args.weightsFile != "":
