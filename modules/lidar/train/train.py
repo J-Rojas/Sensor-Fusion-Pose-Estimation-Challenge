@@ -21,84 +21,55 @@ from model import build_model, load_model
 from pretrain import calculate_population_weights
 from common import pr_curve_plotter
 
-def precision(y_true, y_pred):
-    """Precision metric.
-    Only computes a batch-wise average of precision.
-    Computes the precision, a metric for multi-label classification of
-    how many selected items are relevant.
-    """
+def custom_precision(use_regression):
+    def precision(y_true, y_pred):
+        """Precision metric.
+        Only computes a batch-wise average of precision.
+        Computes the precision, a metric for multi-label classification of
+        how many selected items are relevant.
+        """
 
-    #y_pred = tf.Print(y_pred, ["preds", y_pred])
-    #y_true = tf.Print(y_true, ["labels", y_true])
-    
-    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        #y_pred = tf.Print(y_pred, ["preds", y_pred])
+        #y_true = tf.Print(y_true, ["labels", y_true])
+        if use_regression:
+            y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+            y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        else:
+            y_true_obj = y_true
+            y_pred_obj = y_pred 
 
-    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
+        labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+        preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
 
-    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
-    predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
-    precision = true_positives / (predicted_positives + K.epsilon())
+        true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+        predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
+        precision = true_positives / (predicted_positives + K.epsilon())
+        return precision
+        
     return precision
 
+def custom_recall(use_regression):    
+    def recall(y_true, y_pred):
+        """Recall metric.
+        Only computes a batch-wise average of recall.
+        Computes the recall, a metric for multi-label classification of
+        how many relevant items are selected.
+        """
+        if use_regression:
+            y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+            y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
+        else:
+            y_true_obj = y_true
+            y_pred_obj = y_pred 
+            
+        labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
+        preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
 
-def recall(y_true, y_pred):
-    """Recall metric.
-    Only computes a batch-wise average of recall.
-    Computes the recall, a metric for multi-label classification of
-    how many relevant items are selected.
-    """
-
-    y_true_obj, y_true_bb = tf.split(y_true, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-    y_pred_obj, y_pred_bb = tf.split(y_pred, [NUM_CLASSES, NUM_REGRESSION_OUTPUTS], 2)
-
-    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
-
-    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
-    possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
-    recall = true_positives / (possible_positives + K.epsilon())
-    return recall
-
-# workaround -- will remove once regression is supported with camera model
-def precision_no_regression(y_true, y_pred):
-    """Precision metric.
-    Only computes a batch-wise average of precision.
-    Computes the precision, a metric for multi-label classification of
-    how many selected items are relevant.
-    """
-
-    #y_pred = tf.Print(y_pred, ["preds", y_pred])
-    #y_true = tf.Print(y_true, ["labels", y_true])
-    
-    y_true_obj = y_true
-    y_pred_obj = y_pred 
-
-    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
-
-    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
-    predicted_positives = K.sum(K.round(K.clip(preds_frg, 0, 1)))
-    precision = true_positives / (predicted_positives + K.epsilon())
-    return precision
-
-
-def recall_no_regression(y_true, y_pred):
-    """Recall metric.
-    Only computes a batch-wise average of recall.
-    Computes the recall, a metric for multi-label classification of
-    how many relevant items are selected.
-    """
-    y_true_obj = y_true
-    y_pred_obj = y_pred   
-
-    labels_bkg, labels_frg = tf.split(y_true_obj, 2, 2)
-    preds_bkg, preds_frg = tf.split(y_pred_obj, 2, 2)
-
-    true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
-    possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
-    recall = true_positives / (possible_positives + K.epsilon())
+        true_positives = K.sum(K.round(K.clip(labels_frg * preds_frg, 0, 1)))
+        possible_positives = K.sum(K.round(K.clip(labels_frg, 0, 1)))
+        recall = true_positives / (possible_positives + K.epsilon())
+        return recall
+        
     return recall
     
 class LossHistory(Callback):
@@ -198,11 +169,8 @@ def main():
     population_statistics_train = calculate_population_weights(train_file, dir_prefix, \
                                     (image_height, image_width), data_source, camera_model)
     print("Train statistics: ", population_statistics_train)
-    
-    if use_regression:
-        metrics = [recall, precision]
-    else:
-        metrics = [recall_no_regression, precision_no_regression]
+        
+    metrics = [custom_recall(use_regression), custom_precision(use_regression)]
 
     if args.modelFile != "":
         weightsFile = args.modelFile.replace('json', 'h5')

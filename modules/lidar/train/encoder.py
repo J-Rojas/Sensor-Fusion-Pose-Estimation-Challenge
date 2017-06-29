@@ -6,7 +6,7 @@ import pandas as pd
 from pandas import DataFrame
 import os
 import argparse
-import math
+from math import sin, cos, sqrt
 import json
 import cv2
 import csv
@@ -71,7 +71,7 @@ def get_bb(tx, ty, tz, l, w, h):
 
 #distance between two points in 2D
 def distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+    return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
 def area_from_corners(corner1, corner2):
@@ -164,15 +164,28 @@ def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_r
         y = y.astype('float')
 
     # groud truths for regression part.. encode bounding box corners in 3D
-    bbox = []
-    bbox.append((tx-l/2., ty+w/2., tz+h/2.))
-    bbox.append((tx-l/2., ty+w/2., tz-h/2.))
-    bbox.append((tx-l/2., ty-w/2., tz+h/2.))
-    bbox.append((tx-l/2., ty-w/2., tz-h/2.))
-    bbox.append((tx+l/2., ty+w/2., tz+h/2.))
-    bbox.append((tx+l/2., ty+w/2., tz-h/2.))
-    bbox.append((tx+l/2., ty-w/2., tz+h/2.))
-    bbox.append((tx+l/2., ty-w/2., tz-h/2.))
+    rot_z = np.array([[cos(rz), -sin(rz), 0.0], 
+                      [sin(rz), cos(rz),  0.0],
+                      [0.0,             0.0,        1.0]]) 
+    
+    bbox = np.array([[tx-l/2., ty+w/2., tz+h/2.],
+                     [tx-l/2., ty+w/2., tz-h/2.],
+                     [tx-l/2., ty-w/2., tz+h/2.],
+                     [tx-l/2., ty-w/2., tz-h/2.],
+                     [tx+l/2., ty+w/2., tz+h/2.],
+                     [tx+l/2., ty+w/2., tz-h/2.],
+                     [tx+l/2., ty-w/2., tz+h/2.],
+                     [tx+l/2., ty-w/2., tz-h/2.]])
+    bbox = (np.matmul(rot_z, bbox.transpose())).transpose()
+    #bbox.append(((tx-l/2.), ty+w/2., tz+h/2.))
+    #bbox.append((tx-l/2., ty+w/2., tz-h/2.))
+    #bbox.append((tx-l/2., ty-w/2., tz+h/2.))
+    #bbox.append((tx-l/2., ty-w/2., tz-h/2.))
+    #bbox.append((tx+l/2., ty+w/2., tz+h/2.))
+    #bbox.append((tx+l/2., ty+w/2., tz-h/2.))
+    #bbox.append((tx+l/2., ty-w/2., tz+h/2.))
+    #bbox.append((tx+l/2., ty-w/2., tz-h/2.))
+    
     
     gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], NUM_REGRESSION_OUTPUTS), dtype='float')    
     
@@ -190,20 +203,20 @@ def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_r
                 height = image[img_y, img_x, 1]
                 theta = (img_x + X_MIN) * RES_RAD[1]
                 phi = (img_y + Y_MIN) * RES_RAD[0] 
-                px = distance * math.cos(theta)
-                py = - distance * math.sin(theta)
+                px = distance * cos(theta)
+                py = - distance * sin(theta)
                 pz = height
                 p = np.array([px, py, pz])
                 
                 #rotation around z axis                                                     
-                rot_z = np.array([[math.cos(theta), -math.sin(theta), 0.0], 
-                                  [math.sin(theta), math.cos(theta),  0.0],
+                rot_z = np.array([[cos(theta), -sin(theta), 0.0], 
+                                  [sin(theta), cos(theta),  0.0],
                                   [0.0,             0.0,              1.0]])  
                                 
                 #rotation around y axis  
-                rot_y = np.array([[math.cos(phi), 0.0, math.sin(phi)],
+                rot_y = np.array([[cos(phi), 0.0, sin(phi)],
                                   [0.0,           1.0, 0.0],
-                                  [-math.sin(phi),0.0, math.cos(phi)]])
+                                  [-sin(phi),0.0, cos(phi)]])
                                
                 rot = np.matmul(rot_z, rot_y)
                 rot_T = rot.transpose()
