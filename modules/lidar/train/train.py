@@ -291,7 +291,7 @@ def main():
                 cache=cache_val, augment=False, use_regression=use_regression
             ))
 
-            print(len(cache_train['data']), len(cache_train['labels']))
+            print('cached data: {} cached label: {}'.format(len(cache_train['data']), len(cache_train['labels'])))
             model.fit(cache_train['data'], cache_train['labels'],
                       batch_size=BATCH_SIZE,
                       epochs=EPOCHS,

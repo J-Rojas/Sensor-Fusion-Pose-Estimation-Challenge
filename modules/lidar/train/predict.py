@@ -300,8 +300,13 @@ def write_prediction_data_to_csv(pred_result, timestamps, output_file):
 
     writer.writeheader()
 
-    for pred, ts in zip(pred_result, timestamps):          
-        writer.writerow({'timestamp': ts, 'tx': pred[0], 'ty': pred[1], 'tz': pred[2],
+    for pred, ts in zip(pred_result, timestamps):   
+        if pred.shape[0] == 3:
+            writer.writerow({'timestamp': ts, 'tx': pred[0], 'ty': pred[1], 'tz': pred[2],
+                        'rx': 0.0, 'ry': 0.0, 'rz': 0.0,
+                        'l': 0.0, 'w': 0.0, 'h': 0.0})
+        else:
+            writer.writerow({'timestamp': ts, 'tx': pred[0], 'ty': pred[1], 'tz': pred[2],
                         'rx': 0.0, 'ry': 0.0, 'rz': pred[3],
                         'l': pred[4], 'w': pred[5], 'h': pred[6]})
 
@@ -375,7 +380,7 @@ def predict_rosbag(model, predict_file, use_regression=True):
     return xyz_pred, timestamps         
  
 # return predictions from lidar/camera 2d frontviews  
-def predict(model, predict_file, dir_prefix, export, output_dir, data_source, camera_model=None, use_regression=True):  
+def predict(model, predict_file, dir_prefix, export, output_dir, data_source, camera_model=None):  
 
     image_width = None
     image_height = None
@@ -452,7 +457,7 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
 
         timestamp = os.path.basename(file_prefix).split('_')[0]
         
-        if use_regression and (centroid is not None) and not (centroid[0] == 0. and centroid[1] == 0.):                                                              
+        if data_source == "lidar" and (centroid is not None) and not (centroid[0] == 0. and centroid[1] == 0.):                                                              
             print('timestamp={}'.format(timestamp))     
             centroid_3d_array = back_project_2D_2_3D(np.array([centroid]), \
                                                 np.array([bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1]]).reshape((1,4)), \
@@ -482,7 +487,7 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
             #print('{} -- centroid found: ({}, {}), area={}'.format(file_prefix, centroid[0], centroid[1], bbox_area))  
             centroids[ind][0] = centroid[0]
             centroids[ind][1] = centroid[1]
-            centroids[ind][2] = None
+            centroids[ind][2] = 0
             bounding_boxes[ind,0] = bbox[0][0]
             bounding_boxes[ind,1] = bbox[0][1]
             bounding_boxes[ind,2] = bbox[1][0]
@@ -491,7 +496,7 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
             print('{} -- centroid not found'.format(file_prefix))
             centroids[ind][0] = 0
             centroids[ind][1] = 0
-            centroids[ind][2] = None
+            centroids[ind][2] = 0
             bounding_boxes[ind,0] = 0
             bounding_boxes[ind,1] = 0
             bounding_boxes[ind,2] = 0
@@ -516,9 +521,8 @@ def predict(model, predict_file, dir_prefix, export, output_dir, data_source, ca
 
             cv2.imwrite(file_prefix + "_class.png", image)
     
-    if data_source == "lidar": 
-        if not use_regression:
-            xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])        
+    if data_source == "lidar":         
+        #xyz_pred = back_project_2D_2_3D(centroids, bounding_boxes, all_images[:,:,:,0], all_images[:,:,:,1])        
         return xyz_pred, timestamps
     elif data_source == "camera":
         return centroids, timestamps
@@ -580,7 +584,7 @@ def main():
     model = load_model(args.modelFile, args.weightsFile, use_regression)
         
     if data_type == 'frontview':
-        xyz_pred, timestamps = predict(model, predict_file, dir_prefix, args.export, output_dir, data_source, camera_model, use_regression)        
+        xyz_pred, timestamps = predict(model, predict_file, dir_prefix, args.export, output_dir, data_source, camera_model)        
     else:
         xyz_pred, timestamps = predict_rosbag(model, predict_file, use_regression)
 
