@@ -439,13 +439,13 @@ def main():
             print len(cache_val['cam_images']), len(cache_val['centroid'])
             
             cam_lidar_radar_net.fit([cache_train['cam_images'], cache_train['lidar_images'], cache_train['radar_data']], 
-                      [cache_train['centroid']],
+                      [cache_train['centroid'], cache_train['rz']],
                       batch_size=BATCH_SIZE,
                       epochs=EPOCHS,
                       verbose=1,
                       callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
                       validation_data=([cache_val['cam_images'], cache_val['lidar_images'], cache_val['radar_data']], \
-                      [cache_val['centroid']]),
+                      [cache_val['centroid'], cache_val['rz']]),
                       shuffle=True)
    
             
