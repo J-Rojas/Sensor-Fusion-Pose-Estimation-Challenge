@@ -159,8 +159,7 @@ class ROSBagExtractor:
             if self.output_dir is not None:
                 self.save_image(self.output_dir + '/camera/', name, timestamp, cv_img, self.camera_model)
 
-        elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:
-
+        elif msg_type in ['sensor_msgs/PointCloud2'] and 'velo' in topic:           
             self.lidar_timestamps.append(timestamp.to_nsec())
 
             points = sensor_msgs.point_cloud2.read_points(msg, skip_nans=False)
@@ -222,13 +221,12 @@ class ROSBagExtractor:
             writer.writeheader()
             writer.writerows(self.radar_tracks)
 
-def write_timestamps_to_csv(timestamps, output_file):
-
+def write_timestamps_to_csv(timestamps, output_file):       
     csv_file = open(output_file, 'w')
     writer = csv.DictWriter(csv_file, ['timestamp'])
 
     writer.writeheader()
-
+    
     for ts in timestamps:
         writer.writerow({'timestamp': ts})
 
@@ -314,11 +312,14 @@ def main():
                     extractor.handle_msg(msgType, topic, msg, t, result)
 
     extractor.save_radar_tracks()
-
+    
+    # remove duplicates from lidar timestamps -- there is probably a bug in bag processing    
+    extractor.lidar_timestamps = sorted(set(extractor.lidar_timestamps))    
+    
     # export timestamps
     write_timestamps_to_csv(extractor.lidar_timestamps, output_dir + '/lidar_timestamps.csv')
-    write_timestamps_to_csv(extractor.camera_timestamps, output_dir + '/camera_timestamps.csv')
-
+    write_timestamps_to_csv(extractor.camera_timestamps, output_dir + '/camera_timestamps.csv')   
+    
     # generate lidar interpolation
     if args.interpolate:
 
