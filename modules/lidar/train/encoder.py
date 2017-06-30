@@ -6,12 +6,12 @@ import pandas as pd
 from pandas import DataFrame
 import os
 import argparse
-import math
+from math import sin, cos, sqrt
 import json
 import cv2
 import csv
 from process.globals import X_MIN, Y_MIN, Y_MAX, RES_RAD, CAM_IMG_TOP
-from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS
+from globals import IMG_CAM_WIDTH, IMG_CAM_HEIGHT, NUM_CAM_CHANNELS, NUM_REGRESSION_OUTPUTS
 from keras.utils import to_categorical
 from common.camera_model import CameraModel
 
@@ -71,7 +71,7 @@ def get_bb(tx, ty, tz, l, w, h):
 
 #distance between two points in 2D
 def distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+    return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
 def area_from_corners(corner1, corner2):
@@ -147,8 +147,9 @@ def get_label_bounds(tx, ty, tz, l, w, h, method='outer_rect'):
     return None
 
 
-def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
+def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_rect', image=None):
     if method == 'circle':
+        (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, l, w, h)
         y = generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE)
     else:
         if method == 'inner_rect':
@@ -160,8 +161,75 @@ def generate_label(tx, ty, tz, l, w, h, INPUT_SHAPE, method='outer_rect'):
         label = np.zeros(INPUT_SHAPE[:2])
         label[upper_left_y:lower_right_y, upper_left_x:lower_right_x] = 1
         y = to_categorical(label, num_classes=2) #1st dimension: on-vehicle, 2nd dimension: off-vehicle
+        y = y.astype('float')
+
+    # groud truths for regression part.. encode bounding box corners in 3D
+    rot_z = np.array([[cos(rz), -sin(rz), 0.0], 
+                      [sin(rz), cos(rz),  0.0],
+                      [0.0,             0.0,        1.0]]) 
     
-    return y
+    bbox = np.array([[tx-l/2., ty+w/2., tz+h/2.],
+                     [tx-l/2., ty+w/2., tz-h/2.],
+                     [tx-l/2., ty-w/2., tz+h/2.],
+                     [tx-l/2., ty-w/2., tz-h/2.],
+                     [tx+l/2., ty+w/2., tz+h/2.],
+                     [tx+l/2., ty+w/2., tz-h/2.],
+                     [tx+l/2., ty-w/2., tz+h/2.],
+                     [tx+l/2., ty-w/2., tz-h/2.]])
+    bbox = (np.matmul(rot_z, bbox.transpose())).transpose()
+    #bbox.append(((tx-l/2.), ty+w/2., tz+h/2.))
+    #bbox.append((tx-l/2., ty+w/2., tz-h/2.))
+    #bbox.append((tx-l/2., ty-w/2., tz+h/2.))
+    #bbox.append((tx-l/2., ty-w/2., tz-h/2.))
+    #bbox.append((tx+l/2., ty+w/2., tz+h/2.))
+    #bbox.append((tx+l/2., ty+w/2., tz-h/2.))
+    #bbox.append((tx+l/2., ty-w/2., tz+h/2.))
+    #bbox.append((tx+l/2., ty-w/2., tz-h/2.))
+    
+    
+    gt_regression = np.zeros((INPUT_SHAPE[0], INPUT_SHAPE[1], NUM_REGRESSION_OUTPUTS), dtype='float')    
+    
+    if image is None:
+        for ind, values in enumerate(bbox):
+            gt_regression[:, :, 3*ind] = values[0]*label[:,:]
+            gt_regression[:, :, 3*ind+1] = values[1]*label[:,:]
+            gt_regression[:, :, 3*ind+2] = values[2]*label[:,:]
+    else:
+        c = np.array(bbox)         
+        
+        for img_x in range(upper_left_x, lower_right_x):
+            for img_y in range(upper_left_y, lower_right_y):
+                distance = image[img_y, img_x, 0]
+                height = image[img_y, img_x, 1]
+                theta = (img_x + X_MIN) * RES_RAD[1]
+                phi = (img_y + Y_MIN) * RES_RAD[0] 
+                px = distance * cos(theta)
+                py = - distance * sin(theta)
+                pz = height
+                p = np.array([px, py, pz])
+                
+                #rotation around z axis                                                     
+                rot_z = np.array([[cos(theta), -sin(theta), 0.0], 
+                                  [sin(theta), cos(theta),  0.0],
+                                  [0.0,             0.0,              1.0]])  
+                                
+                #rotation around y axis  
+                rot_y = np.array([[cos(phi), 0.0, sin(phi)],
+                                  [0.0,           1.0, 0.0],
+                                  [-sin(phi),0.0, cos(phi)]])
+                               
+                rot = np.matmul(rot_z, rot_y)
+                rot_T = rot.transpose()
+                                
+                c_prime = np.matmul(rot_T, (c - p).transpose()) 
+                c_prime_T = c_prime.transpose()                                
+                gt_regression[img_y, img_x, :] = np.reshape(c_prime_T, (-1))
+              
+    gt_regression = np.reshape(gt_regression, (INPUT_SHAPE[0]*INPUT_SHAPE[1], NUM_REGRESSION_OUTPUTS))
+    
+    labels_concat = np.concatenate((y, gt_regression), axis=1) 
+    #return y
+    return labels_concat
 
 def generate_camera_bb(tx, ty, tz, l, w, h, camera_model):
 

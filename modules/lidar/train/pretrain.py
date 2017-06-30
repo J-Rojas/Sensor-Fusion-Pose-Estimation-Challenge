@@ -9,9 +9,10 @@ def calculate_sample_statistics(input_shape, gt, metadata, data_source, camera_m
 
     # generate label
     tx, ty, tz = np.float64(gt['tx']), np.float64(gt['ty']), np.float64(gt['tz'])
+    rx, ry, rz = np.float64(gt['rx']), np.float64(gt['ry']), np.float64(gt['rz'])
     l, w, h = np.float64(metadata['l']), np.float64(metadata['w']), np.float64(metadata['h'])
     if data_source == "lidar":
-        label = generate_label(tx, ty, tz, l, w, h, input_shape)[:,1].flatten()
+        label = generate_label(tx, ty, tz, rx, ry, rz, l, w, h, input_shape)[:,1].flatten()
     elif data_source == "camera":
         label, _, _, _, _, _ = generate_camera_label(tx, ty, tz, l, w, h, input_shape, camera_model)
         label = label[:,1].flatten()
