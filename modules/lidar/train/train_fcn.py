@@ -76,7 +76,7 @@ def load_radar_data(indicies, radar_ranges_angles, radar_data):
         
 def data_generator_FCN(obs_centroids, obs_size, 
                         pickle_dir_and_prefix_cam, pickle_dir_and_prefix_lidar,
-                        batch_size, radar_data):
+                        batch_size, radar_data, cache):
                         
     tx = obs_centroids[0]
     ty = obs_centroids[1]
@@ -95,14 +95,41 @@ def data_generator_FCN(obs_centroids, obs_size,
                     globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
     centroid_rotation_size = np.ndarray(shape=(batch_size, 7), dtype=float)
     centroid = np.ndarray(shape=(batch_size, 3), dtype=float)
-    rz = np.ndarray(shape=(batch_size), dtype=float)
+    rz = np.ndarray(shape=(batch_size,1), dtype=float)
     radar_ranges_angles = np.ndarray(shape=(batch_size, 2), dtype=float)
 
     num_batches = data_number_of_batches_per_epoch(pickle_dir_and_prefix_cam, batch_size)
 
     indicies_list = np.arange(len(tx))
     
+    is_cache_avail = False
+
+#    if cache is not None:
+#        is_cache_avail = cache['cam_images'] is not None and cache['centroid'] is not None
+#        if not is_cache_avail:
+#            cache['cam_images'] = np.ndarray(shape=(len(pickle_dir_and_prefix_cam), globals.IMG_CAM_HEIGHT, 
+#                    globals.IMG_CAM_WIDTH, globals.NUM_CAM_CHANNELS), dtype=float)
+#            cache['lidar_images'] = np.ndarray(shape=(len(pickle_dir_and_prefix_lidar), globals.IMG_HEIGHT, 
+#                    globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
+#            cache['radar_data'] = np.ndarray(shape=(len(radar_data[0]), 2), dtype=float)        
+#                    
+#            cache['centroid'] = np.ndarray(shape=(len(obs_centroids[0]), 3), dtype=float)
+#            cache['rz'] = np.ndarray(shape=(len(obs_centroids[0]),1), dtype=float)
+
+    
     while 1:            
+
+        if cache is not None:
+            is_cache_avail = cache['cam_images'] is not None and cache['centroid'] is not None
+            if not is_cache_avail:
+                cache['cam_images'] = np.ndarray(shape=(len(pickle_dir_and_prefix_cam), globals.IMG_CAM_HEIGHT, 
+                        globals.IMG_CAM_WIDTH, globals.NUM_CAM_CHANNELS), dtype=float)
+                cache['lidar_images'] = np.ndarray(shape=(len(pickle_dir_and_prefix_lidar), globals.IMG_HEIGHT, 
+                        globals.IMG_WIDTH, globals.NUM_CHANNELS), dtype=float)
+                cache['radar_data'] = np.ndarray(shape=(len(radar_data[0]), 2), dtype=float)        
+                        
+                cache['centroid'] = np.ndarray(shape=(len(obs_centroids[0]), 3), dtype=float)
+                cache['rz'] = np.ndarray(shape=(len(obs_centroids[0]),1), dtype=float)
 
         indicies = generate_index_list(indicies_list, True, num_batches, batch_size)
 
@@ -110,14 +137,38 @@ def data_generator_FCN(obs_centroids, obs_size,
 
             batch_indicies = indicies[batch * batch_size:batch * batch_size + batch_size]
 
-            load_data(batch_indicies, lidar_images, pickle_dir_and_prefix_lidar, "lidar", globals.NUM_CHANNELS)
-            load_data(batch_indicies, cam_images, pickle_dir_and_prefix_cam, "camera", globals.NUM_CAM_CHANNELS)
-            load_radar_data(batch_indicies, radar_ranges_angles, radar_data) 
-            load_gt(batch_indicies, obs_centroids, centroid_rotation_size, obs_size)
-            np.copyto(centroid, centroid_rotation_size[:,0:3])
-            np.copyto(rz, centroid_rotation_size[:,3]) 
-            
-            yield ([cam_images, lidar_images, radar_ranges_angles], [centroid])
+            if not is_cache_avail:
+                load_data(batch_indicies, lidar_images, pickle_dir_and_prefix_lidar, "lidar", globals.NUM_CHANNELS)
+                load_data(batch_indicies, cam_images, pickle_dir_and_prefix_cam, "camera", globals.NUM_CAM_CHANNELS)
+                load_radar_data(batch_indicies, radar_ranges_angles, radar_data) 
+                load_gt(batch_indicies, obs_centroids, centroid_rotation_size, obs_size)
+                np.copyto(centroid, centroid_rotation_size[:,0:3])
+                np.copyto(rz, centroid_rotation_size[:,3:4]) 
+                
+                if cache is not None:
+                    # save to cache
+                    i = 0
+                    for ind in batch_indicies:
+                        np.copyto(cache['cam_images'][ind], cam_images[i])
+                        np.copyto(cache['lidar_images'][ind], lidar_images[i])
+                        np.copyto(cache['radar_data'][ind], radar_ranges_angles[i])
+                        np.copyto(cache['centroid'][ind], centroid[i])
+                        np.copyto(cache['rz'][ind], rz[i])
+                        i += 1
+                     
+            else:
+                # copy from cache
+                i = 0
+                for ind in batch_indicies:
+                    np.copyto(cam_images[i], cache['cam_images'][ind])
+                    np.copyto(lidar_images[i], cache['lidar_images'][ind])
+                    np.copyto(radar_ranges_angles[i], cache['radar_data'][ind])
+                    np.copyto(centroid[i], cache['centroid'][ind])
+                    np.copyto(rz[i], cache['rz'][ind])
+                    i += 1            
+                        
+                              
+            yield ([cam_images, lidar_images, radar_ranges_angles], [centroid, rz])
    
     
 def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir):
@@ -208,14 +259,14 @@ def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True)
 
     # cam_net_out is too big. apply max_pooling
     if net_name=="cam":
-        output_layer = MaxPooling2D(pool_size=(2, 1), strides=None, padding='valid', data_format=None)(output_layer)
+        output_layer = MaxPooling2D(pool_size=(4, 1), strides=None, padding='valid', data_format=None)(output_layer)
 
     flatten_out = Flatten()(output_layer)
     dropout_1 = Dropout(0.2)(flatten_out)
-    dense_1 = Dense(128, activation='relu', name='dense1_'+net_name,
+    dense_1 = Dense(96, activation='relu', name='dense1_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_1)
     dropout_2 = Dropout(0.2)(dense_1)             
-    dense_2 = Dense(64, activation='relu', name='dense2_'+net_name,
+    dense_2 = Dense(48, activation='relu', name='dense2_'+net_name,
                    kernel_initializer='random_uniform', bias_initializer='zeros')(dropout_2)
                    
     return dense_2
@@ -226,10 +277,10 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "lidar")
     radar_inp = Input(shape=(2,), name='radar')
         
-    concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
-    concat_normalized = BatchNormalization(name='normalize', axis=-1)(concat_input)
-    dense = Dense(64, activation='relu', name='fcn.dense',
-                   kernel_initializer='random_uniform', bias_initializer='zeros')(concat_normalized)
+    dense = concat_normalized = concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
+    #concat_normalized = BatchNormalization(name='normalize', axis=-1)(concat_input)
+    #dense = Dense(3, activation='relu', name='fcn.dense',
+    #               kernel_initializer='random_uniform', bias_initializer='zeros')(concat_normalized)
     
     # output for centroid
     dense_1_1 = Dense(3, activation='elu', name='dense1_1', 
@@ -246,7 +297,7 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     d_2 = Dense(1, activation='linear', name='d2')(concatenate([dense_2_1, dense_2_2]))
 
 
-    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1])                   
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1, d_2])                   
     model.compile(optimizer=Adam(lr=LEARNING_RATE),
                   loss="mean_squared_error", metrics=['mae'])
     
@@ -269,8 +320,6 @@ def main():
     parser.add_argument('--fcn_model', type=str, default="", help='Model Filename')
     parser.add_argument('--fcn_weights', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
-    parser.add_argument('--camera_calibration_model', type=str, help='Camera calibration yaml')
-    parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
     parser.add_argument('--cache', type=str, default=None, help='Cache data')
 
     args = parser.parse_args()
@@ -278,48 +327,43 @@ def main():
     validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
-    camera_model = CameraModel()
-    camera_model.load_camera_calibration(args.camera_calibration_model, args.lidar2cam_model)
-
-    skip_frames_indexes = []
        
     cache_train, cache_val = None, None
     if args.cache is not None:
-        cache_train = {'data': None, 'labels': None}
-        cache_val = {'data': None, 'labels': None}
+        cache_train = {'cam_images': None, 'lidar_images': None, 'radar_data': None, 'centroid': None, 'rz': None}
+        cache_val = {'cam_images': None, 'lidar_images': None, 'radar_data': None, 'centroid': None, 'rz': None}
 
-
-    if args.camera_model == "" or args.camera_weights == "":
-        print "need to enter camera model/weights file"
-        exit(1)
-
-    if args.lidar_model == "" or args.lidar_weights == "":
-        print "need to enter lidar model/weights file"
-        exit(1)
-        
-        
-                        
-#    camera_net = load_model(args.camera_model, args.camera_weights,
-#                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
-#                       layer_name_ext="camera")
-                       
-    camera_net = build_model(
-                       INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
-                       data_source="camera", layer_name_ext="camera")                       
+                
+    if args.camera_model != "":  
+        weightsFile = args.camera_model.replace('json', 'h5')
+        if args.fcn_weights != "":
+            weightsFile = args.camera_weights                 
+        camera_net = load_model(args.camera_model, weightsFile,
+                           INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False,
+                           layer_name_ext="camera")
+    else:                   
+        camera_net = build_model(
+                           INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
+                           data_source="camera", layer_name_ext="camera")    
+                                              
     cam_inp_layer = camera_net.input
-    cam_out_layer = camera_net.get_layer("conv3camera").output
+    cam_out_layer = camera_net.get_layer("deconv6acamera").output
     
 
-#    lidar_net = load_model(args.lidar_model, args.lidar_weights,
-#                       INPUT_SHAPE, NUM_CLASSES, trainable=True,
-#                       layer_name_ext="lidar")
-                       
-    lidar_net = build_model(
-                       INPUT_SHAPE, NUM_CLASSES, trainable=True,
-                       data_source="lidar", layer_name_ext="lidar")
+    if args.lidar_model != "":  
+        weightsFile = args.lidar_model.replace('json', 'h5')
+        if args.lidar_weights != "":
+            weightsFile = args.lidar_weights
+        lidar_net = load_model(args.lidar_model, weightsFile,
+                           INPUT_SHAPE, NUM_CLASSES, trainable=False,
+                           layer_name_ext="lidar")
+    else:                        
+        lidar_net = build_model(
+                           INPUT_SHAPE, NUM_CLASSES, trainable=True,
+                           data_source="lidar", layer_name_ext="lidar")
                        
     lidar_inp_layer = lidar_net.input
-    lidar_out_layer = lidar_net.get_layer("conv3lidar").output
+    lidar_out_layer = lidar_net.get_layer("deconv6alidar").output
     
     if args.fcn_model != "":
         weightsFile = args.fcn_model.replace('json', 'h5')
@@ -352,26 +396,59 @@ def main():
                               write_graph=True, write_images=False)
     loss_history = LossHistory()
     
-    lr_schedule = ReduceLROnPlateau(monitor='mean_absolute_error', factor=0.2, patience=3, verbose=1, \
+    lr_schedule = ReduceLROnPlateau(monitor='d1_mean_absolute_error', factor=0.2, patience=3, verbose=1, \
                                 mode='auto', epsilon=.2, cooldown=0, min_lr=0.0000001)
 
     try:
-
-        cam_lidar_radar_net.fit_generator(
-            data_generator_FCN(
+        if args.cache is None or args.cache == 'generate':
+            cam_lidar_radar_net.fit_generator(
+                data_generator_FCN(
+                    train_data[0], train_data[2], train_data[1], 
+                    train_data[3], BATCH_SIZE, train_data[4],
+                    cache=cache_train
+                ),  # generator
+                n_batches_per_epoch_train,  # number of batches per epoch
+                validation_data=data_generator_FCN(
+                    val_data[0], val_data[2], val_data[1], 
+                    val_data[3], BATCH_SIZE, val_data[4],
+                    cache=cache_val
+                ),
+                validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
+                epochs=EPOCHS,
+                callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
+                verbose=1
+            )
+            
+        elif args.cache == 'shuffle':
+            # load all batches at once
+            
+            print(len(train_data[0][0]), len(val_data[0][0]))
+            
+            next(data_generator_FCN(
                 train_data[0], train_data[2], train_data[1], 
-                train_data[3], BATCH_SIZE, train_data[4]
-            ),  # generator
-            n_batches_per_epoch_train,  # number of batches per epoch
-            validation_data=data_generator_FCN(
+                train_data[3], len(train_data[0][0]), train_data[4],
+                cache=cache_train
+            ))
+            next(data_generator_FCN(
                 val_data[0], val_data[2], val_data[1], 
-                val_data[3], BATCH_SIZE, val_data[4]
-            ),
-            validation_steps=n_batches_per_epoch_val,  # number of batches per epoch
-            epochs=EPOCHS,
-            callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
-            verbose=1
-        )
+                val_data[3], len(val_data[0][0]), val_data[4],
+                cache=cache_val
+            ))
+
+            print len(cache_train['cam_images']), len(cache_train['centroid'])
+            print len(cache_val['cam_images']), len(cache_val['centroid'])
+            
+            cam_lidar_radar_net.fit([cache_train['cam_images'], cache_train['lidar_images'], cache_train['radar_data']], 
+                      [cache_train['centroid']],
+                      batch_size=BATCH_SIZE,
+                      epochs=EPOCHS,
+                      verbose=1,
+                      callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
+                      validation_data=([cache_val['cam_images'], cache_val['lidar_images'], cache_val['radar_data']], \
+                      [cache_val['centroid']]),
+                      shuffle=True)
+   
+            
         
     except KeyboardInterrupt:
         print('\n\nExiting training...')
@@ -381,8 +458,8 @@ def main():
     # save model weights
     cam_lidar_radar_net.save_weights(os.path.join(outdir, "fcn_model.h5"), True)
 
-    #print precision_recall_array
-    pr_curve_plotter.plot_pr_curve(loss_history, outdir)
+    #print precision_recall_array -- NO MORE PRECISON/RECALL -- GIVES ERROR IF UNCOMMENTED
+    #pr_curve_plotter.plot_pr_curve(loss_history, outdir)
 
 
 if __name__ == '__main__':
