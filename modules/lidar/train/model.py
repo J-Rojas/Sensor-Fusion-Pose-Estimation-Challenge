@@ -87,7 +87,7 @@ def build_model(input_shape, num_classes, data_source,
     # vertical strides
     vs = 2
     if data_source == "lidar":
-        vs = 1
+        vs = globals.LIDAR_CONV_VERTICAL_STRIDE
         
     post_normalized = inputs = Input(shape=input_shape, name='input')
     if globals.USE_SAMPLE_WISE_BATCH_NORMALIZATION:
