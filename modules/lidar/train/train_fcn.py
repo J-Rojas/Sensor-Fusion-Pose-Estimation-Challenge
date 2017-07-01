@@ -36,20 +36,24 @@ from common.csv_utils import foreach_dirset
 from train import LossHistory
 
 
-def load_fcn(model_file, weights_file, trainable):
+def load_fcn(model_file, weights_file, lockLidarModel, lockCameraModel, trainable):
 
     with open(model_file, 'r') as jfile:
         print('Loading weights file {}'.format(weights_file))
         print("reading existing model and weights")
         model = keras.models.model_from_json(json.loads(jfile.read()))
         model.load_weights(weights_file)
+        
         for layer in model.layers:
             layer.trainable = trainable
-       
+            if (lockCameraModel and "cameraNet" in layer.name) or (lockLidarModel and "lidarNet" in layer.name):
+                layer.trainable = False
+                print layer.name, "trainable mode changed to False"
+      
         model.compile(optimizer=Adam(lr=LEARNING_RATE),
                       loss="mean_squared_error", metrics=['mae'])
-                      
-    print(model.summary())
+                                     
+    print(model.summary())  
     return model
 
 def load_gt(indicies, centroid_rotation, gt, obs_size):
@@ -251,14 +255,10 @@ def get_data_and_ground_truth_matching_lidar_cam_frames(csv_sources, parent_dir)
     return obs_centroid, pickle_dir_and_prefix_cam, obs_size, pickle_dir_and_prefix_lidar, radar_data
 
 
-def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True):
-
-#    print input_layer.shape
-#    labels_bkg, labels_frg = tf.split(output_layer, 2, 2, name='split_'+net_name)
-#    reshaped_out = tf.reshape(labels_frg, input_layer.shape, name='reshaped_'+net_name)
+def build_FCN(input_layer, output_layer, net_name):
 
     # cam_net_out is too big. apply max_pooling
-    if net_name=="cam":
+    if net_name=="cam2fcn":
         output_layer = MaxPooling2D(pool_size=(4, 1), strides=None, padding='valid', data_format=None)(output_layer)
 
     flatten_out = Flatten()(output_layer)
@@ -271,10 +271,11 @@ def build_FCN(input_layer, output_layer, net_name, metrics=None, trainable=True)
                    
     return dense_2
 
-def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=None, trainable=True):
+def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out,\
+                        lockLidarModel, lockCameraModel):
 
-    cam_net_out = build_FCN(cam_inp, cam_net_out, "cam")
-    lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "lidar")
+    cam_net_out = build_FCN(cam_inp, cam_net_out, "cam2fcn")
+    lidar_net_out = build_FCN(lidar_inp, lidar_net_out, "ldr2fcn")
     radar_inp = Input(shape=(2,), name='radar')
         
     dense = concat_normalized = concat_input = concatenate([cam_net_out, lidar_net_out, radar_inp])
@@ -297,10 +298,18 @@ def build_FCN_cam_lidar(cam_inp, lidar_inp, cam_net_out, lidar_net_out, metrics=
     d_2 = Dense(1, activation='linear', name='d2')(concatenate([dense_2_1, dense_2_2]))
 
 
-    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1, d_2])                   
+    model = Model(inputs=[cam_inp, lidar_inp, radar_inp], outputs=[d_1, d_2])     
+    
+    for layer in model.layers:
+        layer.trainable = True
+        if (lockCameraModel and "cameraNet" in layer.name) or (lockLidarModel and "lidarNet" in layer.name):
+            layer.trainable = False
+            print layer.name, "trainable mode changed to False"
+                  
     model.compile(optimizer=Adam(lr=LEARNING_RATE),
                   loss="mean_squared_error", metrics=['mae'])
-    
+ 
+   
 
     print(model.summary())
     return model
@@ -321,58 +330,79 @@ def main():
     parser.add_argument('--fcn_weights', type=str, default="", help='Weights Filename')
     parser.add_argument('--outdir', type=str, default="./", help='output directory')
     parser.add_argument('--cache', type=str, default=None, help='Cache data')
+    
+    # if fcn_model file is given, weights of all network will come from fcn model even if
+    # camera/lidar model file names are given too. If you give camera/lidar model names along
+    # with fcn model, camera/lidar part will not be trained, only the top part.
+    
+    # to create fcn model with previously trained camera/lidar models, do not enter fcn model 
+    # file name. This way newly created fcn model will include camera/lidar weights and can be
+    # used to train only top part next time you run training.
 
     args = parser.parse_args()
     train_file = args.train_file
     validation_file = args.val_file
     outdir = args.outdir
     dir_prefix = args.dir_prefix
+           
        
     cache_train, cache_val = None, None
     if args.cache is not None:
         cache_train = {'cam_images': None, 'lidar_images': None, 'radar_data': None, 'centroid': None, 'rz': None}
         cache_val = {'cam_images': None, 'lidar_images': None, 'radar_data': None, 'centroid': None, 'rz': None}
 
-                
+    lockCameraModel = None   
+    camera_net = None         
     if args.camera_model != "":  
-        weightsFile = args.camera_model.replace('json', 'h5')
-        if args.fcn_weights != "":
-            weightsFile = args.camera_weights                 
-        camera_net = load_model(args.camera_model, weightsFile,
-                           INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False,
-                           layer_name_ext="camera")
-    else:                   
-        camera_net = build_model(
-                           INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
-                           data_source="camera", layer_name_ext="camera")    
-                                              
-    cam_inp_layer = camera_net.input
-    cam_out_layer = camera_net.get_layer("deconv6acamera").output
+        lockCameraModel = True
+        if args.fcn_model == "":
+            weightsFile = args.camera_model.replace('json', 'h5')
+            if args.fcn_weights != "":
+                weightsFile = args.camera_weights                 
+            camera_net = load_model(args.camera_model, weightsFile,
+                               INPUT_SHAPE_CAM, NUM_CLASSES, trainable=False,
+                               layer_name_ext="cameraNet")
+    else:  
+        lockCameraModel = False     
+        if args.fcn_model == "":           
+            camera_net = build_model(
+                               INPUT_SHAPE_CAM, NUM_CLASSES, trainable=True,
+                               data_source="camera", layer_name_ext="cameraNet")    
+    if camera_net is not None:                                          
+        cam_inp_layer = camera_net.input
+        cam_out_layer = camera_net.get_layer("deconv6acameraNet").output
     
-
-    if args.lidar_model != "":  
-        weightsFile = args.lidar_model.replace('json', 'h5')
-        if args.lidar_weights != "":
-            weightsFile = args.lidar_weights
-        lidar_net = load_model(args.lidar_model, weightsFile,
-                           INPUT_SHAPE, NUM_CLASSES, trainable=False,
-                           layer_name_ext="lidar")
-    else:                        
-        lidar_net = build_model(
-                           INPUT_SHAPE, NUM_CLASSES, trainable=True,
-                           data_source="lidar", layer_name_ext="lidar")
-                       
-    lidar_inp_layer = lidar_net.input
-    lidar_out_layer = lidar_net.get_layer("deconv6alidar").output
+    lockLidarModel = None
+    lidar_net = None
+    if args.lidar_model != "":
+        lockLidarModel = True
+        if args.fcn_model == "":
+            weightsFile = args.lidar_model.replace('json', 'h5')
+            if args.lidar_weights != "":
+                weightsFile = args.lidar_weights
+            lidar_net = load_model(args.lidar_model, weightsFile,
+                               INPUT_SHAPE, NUM_CLASSES, trainable=False,
+                               layer_name_ext="lidarNet")
+    else:     
+        lockLidarModel = False   
+        if args.fcn_model == "":                
+            lidar_net = build_model(
+                               INPUT_SHAPE, NUM_CLASSES, trainable=True,
+                               data_source="lidar", layer_name_ext="lidarNet")
+    
+    if lidar_net is not None:                   
+        lidar_inp_layer = lidar_net.input
+        lidar_out_layer = lidar_net.get_layer("deconv6alidarNet").output
     
     if args.fcn_model != "":
         weightsFile = args.fcn_model.replace('json', 'h5')
         if args.fcn_weights != "":
             weightsFile = args.fcn_weights
-        cam_lidar_radar_net = load_fcn(args.fcn_model, weightsFile, True)
+        cam_lidar_radar_net = load_fcn(args.fcn_model, weightsFile, \
+                          lockLidarModel, lockCameraModel, True)
     else:    
         cam_lidar_radar_net = build_FCN_cam_lidar(cam_inp_layer, lidar_inp_layer, 
-                        cam_out_layer, lidar_out_layer)
+                        cam_out_layer, lidar_out_layer, lockLidarModel, lockCameraModel)
         # save the model
         with open(os.path.join(outdir, 'fcn_model.json'), 'w') as outfile:
             json.dump(cam_lidar_radar_net.to_json(), outfile)   
@@ -386,6 +416,20 @@ def main():
     n_batches_per_epoch_train = data_number_of_batches_per_epoch(train_data[1], BATCH_SIZE)
     n_batches_per_epoch_val = data_number_of_batches_per_epoch(val_data[1], BATCH_SIZE)
 
+
+    if args.fcn_model != "" and (args.camera_model != "" or args.lidar_model):
+        print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"   
+        print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        print "!!!!                                                                      !!!!"
+        print "!!!! YOU ENTERED CAMERA AND/OR LIDAR MODEL NAME ALONG WITH FCN MODEL NAME !!!!"
+        print "!!!!         THIS WILL ONLY FREEZE THE TRAINING OF CAMERA/LIDAR           !!!!"
+        print "!!!!        CAMERA/LIDAR WEIGHTS ARE STILL LOADED FROM FCN MODEL          !!!!"
+        print "!!!!                                                                      !!!!"
+        print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        print "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+
+
     print("Number of batches per epoch: {}".format(n_batches_per_epoch_train))
     print("start time:")
     print(datetime.datetime.now())
@@ -395,7 +439,6 @@ def main():
     tensorboard = TensorBoard(histogram_freq=1, log_dir=os.path.join(outdir, 'tensorboard/'),
                               write_graph=True, write_images=False)
     loss_history = LossHistory()
-    
     lr_schedule = ReduceLROnPlateau(monitor='d1_mean_absolute_error', factor=0.2, patience=3, verbose=1, \
                                 mode='auto', epsilon=.2, cooldown=0, min_lr=0.0000001)
 
@@ -443,7 +486,7 @@ def main():
                       batch_size=BATCH_SIZE,
                       epochs=EPOCHS,
                       verbose=1,
-                      callbacks=[checkpointer, tensorboard, loss_history, lr_schedule],
+                      callbacks=[checkpointer, loss_history, lr_schedule],
                       validation_data=([cache_val['cam_images'], cache_val['lidar_images'], cache_val['radar_data']], \
                       [cache_val['centroid'], cache_val['rz']]),
                       shuffle=True)

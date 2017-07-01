@@ -33,19 +33,6 @@ from train_fcn import data_generator_FCN, load_fcn
 from predict import write_prediction_data_to_csv
 
 
-def load_model(model_file, weights_file, trainable):
-    with open(model_file, 'r') as jfile:
-        print('Loading weights file {}'.format(weights_file))
-        print("reading existing model and weights")
-        model = keras.models.model_from_json(json.loads(jfile.read()))
-        model.load_weights(weights_file)
-        for layer in model.layers:
-            layer.name = layer.name+model_file
-            layer.trainable = trainable
-
-    return model
-
-
 def get_predict_data_matching_lidar_cam_frames(csv_sources, parent_dir):
 
     txl = []
@@ -121,7 +108,7 @@ def get_predict_data_matching_lidar_cam_frames(csv_sources, parent_dir):
 
  
 # return predictions from lidar/camera 2d frontviews  
-def predict_fcn(model, predict_file, dir_prefix, export, output_dir, camera_model):  
+def predict_fcn(model, predict_file, dir_prefix, export, output_dir):  
 
 
     # load data
@@ -133,57 +120,45 @@ def predict_fcn(model, predict_file, dir_prefix, export, output_dir, camera_mode
     predictions = model.predict_generator(
         data_generator_FCN(
                 predict_data[0], predict_data[2], predict_data[1], predict_data[3],
-                BATCH_SIZE, predict_data[4]
+                BATCH_SIZE, predict_data[4], None
             ),  # generator
         n_batches_per_epoch,
         verbose=0
     )
-    
 
     #print predict_data[0]
     # reload data as one big batch
     all_data_loader = data_generator_FCN(
             predict_data[0], predict_data[2], predict_data[1], predict_data[3],
-            len(predict_data[1]), predict_data[4]
+            len(predict_data[1]), predict_data[4], None
             )
     all_images, all_labels = all_data_loader.next()
     
-
-    # only centroids[0] and centroids[1] will be valid. centroids[2] is added for 
-    # output compatibility between lidar and camera images
-    centroids = np.zeros((all_images[0].shape[0],3))
+    centroid_and_rz = np.zeros((all_images[0].shape[0],4))
 
     timestamps = []
     ind = 0
 
-    print len(predictions)
-
     # extract the 'car' category labels for all pixels in the first results, 0 is non-car, 1 is car
-    for prediction, file_prefix in zip(predictions, predict_data[1]):
+    for centroid, rz, file_prefix in zip(predictions[0], predictions[1], predict_data[1]):
     
-        print prediction
+        print centroid, rz
 
-        centroids[ind,0] = prediction[0]
-        centroids[ind,1] = prediction[1]
-        centroids[ind,2] = prediction[2]
+        centroid_and_rz[ind,0] = centroid[0]
+        centroid_and_rz[ind,1] = centroid[1]
+        centroid_and_rz[ind,2] = centroid[2]
+        centroid_and_rz[ind,3] = rz[0]
         timestamps.append(os.path.basename(file_prefix).split('_')[0])
         ind += 1
     
-    return centroids, timestamps
+    return centroid_and_rz, timestamps
     
         
 def main():
     parser = argparse.ArgumentParser(description='Lidar car/pedestrian trainer')
     parser.add_argument("predict_file", type=str, default="", help="list of data folders for prediction or rosbag file name")
-    parser.add_argument('--export', dest='export', action='store_true', help='Export images')
     parser.add_argument("--dir_prefix", type=str, default="", help="absolute path to folders")
     parser.add_argument('--output_dir', type=str, default=None, help='output file for prediction results')
-    parser.add_argument('--camera_calibration_model', type=str, help='Camera calibration yaml')
-    parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')   
-    parser.add_argument('--camera_model', type=str, default="", help='Model Filename')
-    parser.add_argument('--camera_weights', type=str, default="", help='Weights Filename')
-    parser.add_argument('--lidar_model', type=str, default="", help='Model Filename')
-    parser.add_argument('--lidar_weights', type=str, default="", help='Weights Filename')
     parser.add_argument('--fcn_model', type=str, default="", help='Model Filename')
     parser.add_argument('--fcn_weights', type=str, default="", help='Weights Filename')
     
@@ -196,17 +171,10 @@ def main():
     predict_file = args.predict_file
     dir_prefix = args.dir_prefix
     prediction_file_name = "objects_obs1_camera_lidar_predictions.csv"
-    camera_model = CameraModel()
-    camera_model.load_camera_calibration(args.camera_calibration_model, args.lidar2cam_model)
-    
-    # load models with weights
-    camera_net = load_model(args.camera_model, args.camera_weights, False)
 
-    lidar_net = load_model(args.lidar_model, args.lidar_weights, False)
-                       
-    fcn_net = load_fcn(args.fcn_model, args.fcn_weights, False)                
+    fcn_net = load_fcn(args.fcn_model, args.fcn_weights, False, False, False)                
         
-    xyz_pred, timestamps = predict_fcn(fcn_net, predict_file, dir_prefix, args.export, output_dir, camera_model)        
+    xyz_pred, timestamps = predict_fcn(fcn_net, predict_file, dir_prefix, args.export, output_dir)        
 
     if output_dir is not None:
         file_prefix = output_dir + "/"
