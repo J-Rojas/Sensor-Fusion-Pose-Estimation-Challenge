@@ -28,11 +28,16 @@ def data_number_of_batches_per_epoch(data, BATCH_SIZE):
 #
 # rotate images/labels randomly
 #
-def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height, use_regression):
-    
+def data_random_rotate(image, label, obj_center, rz, obj_size, img_width, img_height, use_regression):
+    label_dim = globals.NUM_CLASSES
+    if use_regression:
+        label_dim = globals.NUM_CLASSES + globals.NUM_REGRESSION_OUTPUTS
+    else:
+        rz = 0.  #remove after regressin is added for camera model
+        
     # get bounding box of object in 2D
     (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = \
-        get_label_bounds(obj_center[0], obj_center[1], obj_center[2], obj_size[0], obj_size[1], obj_size[2])
+        get_label_bounds(obj_center[0], obj_center[1], obj_center[2], rz, obj_size[0], obj_size[1], obj_size[2])
     
     # do not rotate if object rolls partially to right/left of the image  
     # get another random number
@@ -41,9 +46,7 @@ def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height
         rotate_by = randrange(0, img_width)
     
     #print "rotate_by: " + str(rotate_by)    
-    label_dim = globals.NUM_CLASSES
-    if use_regression:
-        label_dim = globals.NUM_CLASSES + globals.NUM_REGRESSION_OUTPUTS
+    
     label_reshaped = np.reshape(label, (img_height, img_width, label_dim))
     rotated_label = np.roll(label_reshaped, rotate_by, axis=1)
     rotated_flatten_label = np.reshape(rotated_label, (img_height*img_width, label_dim))
@@ -56,14 +59,14 @@ def data_random_rotate(image, label, obj_center, obj_size, img_width, img_height
 # 
 # rotate data in a given batch
 #
-def batch_random_rotate(indicies, images, labels, tx, ty, tz, obsl, obsw, obsh, img_width, img_height, use_regression):
+def batch_random_rotate(indicies, images, labels, tx, ty, tz, rz, obsl, obsw, obsh, img_width, img_height, use_regression):
 
     img_ind = 0
     for ind in indicies:
 
         obj_center = [tx[ind], ty[ind], tz[ind]]
         obj_size = [obsl[ind], obsw[ind], obsh[ind]]
-        data_random_rotate(images[img_ind], labels[img_ind], obj_center, obj_size, img_width, img_height, use_regression)
+        data_random_rotate(images[img_ind], labels[img_ind], obj_center, rz[ind], obj_size, img_width, img_height, use_regression)
 
         img_ind += 1
 
@@ -154,7 +157,7 @@ def data_generator_train(obs_centroids_and_rotation, obs_size, pickle_dir_and_pr
                     i += 1
 
             if augment:
-                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, obsl, obsw, obsh, IMG_WIDTH, IMG_HEIGHT, use_regression)
+                batch_random_rotate(batch_indicies, images, obj_labels, tx, ty, tz, rz, obsl, obsw, obsh, IMG_WIDTH, IMG_HEIGHT, use_regression)
 
             yield (images, obj_labels)
 

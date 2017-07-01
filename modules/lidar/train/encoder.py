@@ -44,20 +44,26 @@ def project_2d(tx, ty, tz):
     return (x_img, y_img)
 
 #returns the projected corners in order of distance from centroid in 2d
-def get_bb(tx, ty, tz, l, w, h):
-    bbox = []
-
-    bbox.append(project_2d(tx-l/2., ty+w/2., tz+h/2.))
-    bbox.append(project_2d(tx-l/2., ty+w/2., tz-h/2.))
-    bbox.append(project_2d(tx-l/2., ty-w/2., tz+h/2.))
-    bbox.append(project_2d(tx-l/2., ty-w/2., tz-h/2.))
-    bbox.append(project_2d(tx+l/2., ty+w/2., tz+h/2.))
-    bbox.append(project_2d(tx+l/2., ty+w/2., tz-h/2.))
-    bbox.append(project_2d(tx+l/2., ty-w/2., tz+h/2.))
-    bbox.append(project_2d(tx+l/2., ty-w/2., tz-h/2.))
-
-    #print(bbox)
-    bbox = np.array(bbox)
+def get_bb(tx, ty, tz, rz, l, w, h):                   
+    rot_z = np.array([[cos(rz), -sin(rz), 0.0], 
+                      [sin(rz), cos(rz),  0.0],
+                      [0.0,     0.0,      1.0]]) 
+    
+    bbox_3d = np.array([[tx-l/2., ty+w/2., tz+h/2.],
+                     [tx-l/2., ty+w/2., tz-h/2.],
+                     [tx-l/2., ty-w/2., tz+h/2.],
+                     [tx-l/2., ty-w/2., tz-h/2.],
+                     [tx+l/2., ty+w/2., tz+h/2.],
+                     [tx+l/2., ty+w/2., tz-h/2.],
+                     [tx+l/2., ty-w/2., tz+h/2.],
+                     [tx+l/2., ty-w/2., tz-h/2.]])
+    bbox_3d = (np.matmul(rot_z, bbox_3d.transpose())).transpose()
+    
+    bbox = np.zeros((8, 2), dtype='int')
+    for i, rotated in enumerate(bbox_3d):           
+        projected = project_2d(rotated[0], rotated[1], rotated[2])
+        bbox[i, :] = [projected[0], projected[1]]
+        
     centroid = project_2d(tx, ty, tz)
     d = []
     for p in bbox:
@@ -80,8 +86,8 @@ def area_from_corners(corner1, corner2):
     return diff_x * diff_y
 
 
-def get_inner_rect(tx, ty, tz, l, w, h):
-    bbox = get_bb(tx, ty, tz, l, w, h)
+def get_inner_rect(tx, ty, tz, rz, l, w, h):
+    bbox = get_bb(tx, ty, tz, rz, l, w, h)
     sorted_corners = bbox[:4]
 
     upper_left_x = sorted_corners.min(axis=0)[0]
@@ -91,8 +97,8 @@ def get_inner_rect(tx, ty, tz, l, w, h):
     return (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
 
-def get_outer_rect(tx, ty, tz, l, w, h):
-    bbox = get_bb(tx, ty, tz, l, w, h)
+def get_outer_rect(tx, ty, tz, rz, l, w, h):
+    bbox = get_bb(tx, ty, tz, rz, l, w, h)
     sorted_corners = bbox[-4:]
 
     upper_left_x = sorted_corners.min(axis=0)[0]
@@ -102,8 +108,8 @@ def get_outer_rect(tx, ty, tz, l, w, h):
     return (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
 
-def get_circle_rect(tx, ty, tz, l, w, h):
-    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
+def get_circle_rect(tx, ty, tz, rz, l, w, h):
+    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, rz, l, w, h)
 
     dim_x = (lower_right_x - upper_left_x)
     dim_y = (lower_right_y - upper_left_y)
@@ -115,8 +121,8 @@ def get_circle_rect(tx, ty, tz, l, w, h):
 
     return (center_point_x - r / 2, center_point_y - r / 2), (center_point_x + r / 2, center_point_y + r / 2)
 
-def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
-    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, l, w, h)
+def generate_label_from_circle(tx, ty, tz, rz, l, w, h, INPUT_SHAPE):
+    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, rz, l, w, h)
     r = min((lower_right_y - upper_left_y) / 2.0, (lower_right_x - upper_left_x) / 2.0)
     centroid = project_2d(tx, ty, tz)
 
@@ -136,26 +142,26 @@ def generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE):
     return y
 
 
-def get_label_bounds(tx, ty, tz, l, w, h, method='outer_rect'):
+def get_label_bounds(tx, ty, tz, rz, l, w, h, method='outer_rect'):
     if method == 'circle':
-        return get_circle_rect(tx, ty, tz, l, w, h)
+        return get_circle_rect(tx, ty, tz, rz, l, w, h)
     else:
         if method == 'inner_rect':
-            return get_inner_rect(tx, ty, tz, l, w, h)
+            return get_inner_rect(tx, ty, tz, rz, l, w, h)
         elif method == 'outer_rect':
-            return get_outer_rect(tx, ty, tz, l, w, h)
+            return get_outer_rect(tx, ty, tz, rz, l, w, h)
     return None
 
 
 def generate_label(tx, ty, tz, rx, ry, rz, l, w, h, INPUT_SHAPE, method='outer_rect', image=None):
     if method == 'circle':
         (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_circle_rect(tx, ty, tz, l, w, h)
-        y = generate_label_from_circle(tx, ty, tz, l, w, h, INPUT_SHAPE)
+        y = generate_label_from_circle(tx, ty, tz, rz, l, w, h, INPUT_SHAPE, rz)
     else:
         if method == 'inner_rect':
-            (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
+            (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, rz, l, w, h)
         elif method == 'outer_rect':
-            (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_outer_rect(tx, ty, tz, l, w, h)
+            (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_outer_rect(tx, ty, tz, rz, l, w, h)
         #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
 
         label = np.zeros(INPUT_SHAPE[:2])
@@ -321,11 +327,11 @@ def generate_camera_label(tx, ty, tz, l, w, h, INPUT_SHAPE, camera_model, method
     return y, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), uv_bbox_sorted, uv_centroid, r
 
     
-def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
+def draw_bb_circle(tx, ty, tz, rz, l, w, h, infile, outfile):
     centroid = project_2d(tx, ty, tz)
     #print('Centroid: {}'.format(centroid))
-    bbox = get_bb(tx, ty, tz, l, w, h)
-    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, l, w, h)
+    bbox = get_bb(tx, ty, tz, rz, l, w, h)
+    (upper_left_x, upper_left_y), (lower_right_x, lower_right_y) = get_inner_rect(tx, ty, tz, rz, l, w, h)
     #print (upper_left_x, upper_left_y), (lower_right_x, lower_right_y)
     r = min((lower_right_y - upper_left_y)/2.0, (lower_right_x - upper_left_x)/2.0)
     #print r
@@ -344,19 +350,19 @@ def draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile):
     cv2.imwrite(outfile, img)
 
 
-def draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method='inner_rect'):
+def draw_bb_rect(tx, ty, tz, rz, l, w, h, infile, outfile, method='inner_rect'):
     centroid = project_2d(tx, ty, tz)
     img = cv2.imread(infile)
     cv2.circle(img, centroid, 2, (0, 0, 255), thickness=-1)
 
-    bbox = get_bb(tx, ty, tz, l, w, h)
+    bbox = get_bb(tx, ty, tz, rz, l, w, h)
     for p in bbox:
         cv2.circle(img, (p[0], p[1]), 2, (255, 255, 255), thickness=-1)
 
     if method == 'inner_rect':
-        upper_left, lower_right = get_inner_rect(tx, ty, tz, l, w, h)
+        upper_left, lower_right = get_inner_rect(tx, ty, tz, rz, l, w, h)
     elif method == 'outer_rect':
-        upper_left, lower_right = get_outer_rect(tx, ty, tz, l, w, h)
+        upper_left, lower_right = get_outer_rect(tx, ty, tz, rz, l, w, h)
 
     cv2.rectangle(img, upper_left, lower_right, (0, 255, 0), 1)
 
@@ -364,11 +370,11 @@ def draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method='inner_rect'):
     cv2.imwrite(outfile, img)
 
 
-def draw_bb(tx, ty, tz, l, w, h, infile, outfile, method='circle'):
+def draw_bb(tx, ty, tz, rz, l, w, h, infile, outfile, method='circle'):
     if method == 'circle':
-        draw_bb_circle(tx, ty, tz, l, w, h, infile, outfile)
+        draw_bb_circle(tx, ty, tz, rz, l, w, h, infile, outfile)
     else:
-        draw_bb_rect(tx, ty, tz, l, w, h, infile, outfile, method)
+        draw_bb_rect(tx, ty, tz, rz, l, w, h, infile, outfile, method)
 
 
 def test():
@@ -390,7 +396,7 @@ def main():
     parser = argparse.ArgumentParser(description="Draw bounding box on projected 2D lidar images.")
     parser.add_argument("--input_dir", help="Input directory.")
     parser.add_argument("--output_dir", help="Output directory.")
-    parser.add_argument("--shape", help="bounding box shape: circle, outer_rect, inner_rect", default="circle")
+    parser.add_argument("--shape", help="bounding box shape: circle, outer_rect, inner_rect", default="outer_rect")
     parser.add_argument('--data_source', type=str, default="lidar", help='lidar or camera data')
     parser.add_argument('--camera_model', type=str, help='Camera calibration yaml')
     parser.add_argument('--lidar2cam_model', type=str, help='Lidar to Camera calibration yaml')
@@ -404,7 +410,8 @@ def main():
     camera_model_file = args.camera_model
     lidar2cam_model_file = args.lidar2cam_model
     metadata_fname = args.metadata
-
+    print(shape)
+    
     if not os.path.isdir(input_dir) or not os.path.isdir(output_dir):
         print('input_dir or output_dir does not exist')
         sys.exit()
@@ -412,7 +419,22 @@ def main():
     if shape not in ('circle', 'outer_rect', 'inner_rect'):
         print('shape must be one of the following: circle, outer_rect, inner_rect')
         sys.exit()
-
+    
+    if not metadata_fname:
+        print "need to enter metadata.csv file path/name"
+        exit(1) 
+            
+    with open(metadata_fname) as metafile:
+        records = csv.DictReader(metafile)
+        mdr = []
+        for record in records:
+            mdr.append(record)
+        
+        print mdr[0]
+        l = float(mdr[0]['l'])
+        w = float(mdr[0]['w'])
+        h = float(mdr[0]['h'])
+            
     if data_source == "lidar":
         #input_dir needs to contain the following:
         #obs_poses_interp_transform.csv, and a sub directory lidar_360 that contains lidar images    
@@ -424,8 +446,7 @@ def main():
         obs_df = pd.read_csv(obs_file, index_col=['timestamp'])    
         #print(obs_df)
 
-        lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))
-        l, w, h = (4.2418, 1.4478, 1.5748)
+        lidar_img_dir = os.listdir(os.path.join(input_dir, 'lidar_360'))       
 
         for f in lidar_img_dir:
             if f.endswith('_distance.png'):
@@ -435,9 +456,10 @@ def main():
                     tx = obs_df.loc[ts]['tx']
                     ty = obs_df.loc[ts]['ty']
                     tz = obs_df.loc[ts]['tz']
+                    rz = obs_df.loc[ts]['rz']
                     infile = os.path.join(input_dir, 'lidar_360', f)
                     outfile = os.path.join(output_dir, f.split(".")[0] + '_bb.png')
-                    draw_bb(tx, ty, tz, l, w, h, infile, outfile, method=shape)           
+                    draw_bb(tx, ty, tz, rz, l, w, h, infile, outfile, method=shape)           
 
     elif data_source == "camera":
        if not camera_model_file:
@@ -445,21 +467,7 @@ def main():
             exit(1)
        if not lidar2cam_model_file:
             print "need to enter lidar to camera calibration yaml"
-            exit(1)               
-       if not metadata_fname:
-            print "need to enter metadata.csv file path/name"
-            exit(1)
-            
-       with open(metadata_fname) as metafile:
-            records = csv.DictReader(metafile)
-            mdr = []
-            for record in records:
-                mdr.append(record)
-            
-            print mdr[0]
-            l = float(mdr[0]['l'])
-            w = float(mdr[0]['w'])
-            h = float(mdr[0]['h'])
+            exit(1)                                       
                     
        image_width = IMG_CAM_WIDTH
        image_height = IMG_CAM_HEIGHT
