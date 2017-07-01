@@ -104,7 +104,7 @@ def build_model(input_shape, num_classes, data_source,
     # vertical strides
     vs = 2
     if data_source == "lidar":
-        vs = 1
+        vs = globals.LIDAR_CONV_VERTICAL_STRIDE
 
     post_normalized = inputs = Input(shape=input_shape, name='input')
     if globals.USE_SAMPLE_WISE_BATCH_NORMALIZATION:
@@ -116,35 +116,20 @@ def build_model(input_shape, num_classes, data_source,
     inputs_padded = ZeroPadding2D(padding=((0, 0), (0, 3)))(post_normalized)
     conv1 = Conv2D(4, 5, strides=(vs, 4), activation='relu', name='conv1', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(inputs_padded)
-    conv2 = Conv2D(6, 5, strides=(vs, 2), activation='relu', name='conv2',
+    conv2 = Conv2D(6, 5, strides=(vs, 2), activation='relu', name='conv2', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(conv1)
-    conv3 = Conv2D(12, 5, strides=(vs, 2), activation='relu', name='conv3',
+    conv3 = Conv2D(12, 5, strides=(vs, 2), activation='relu', name='conv3', padding='same',
                    kernel_initializer='random_uniform', bias_initializer='zeros')(conv2)
-    deconv4 = Conv2DTranspose(16, 5, strides=(vs, 2), activation='relu', name='deconv4',
+    deconv4 = Conv2DTranspose(16, 5, strides=(vs, 2), activation='relu', name='deconv4', padding='same',
                               kernel_initializer='random_uniform', bias_initializer='zeros')(conv3)
-                              
-    if data_source == "camera":                          
-        deconv4_padded = ZeroPadding2D(padding=((1, 0), (0, 1)))(deconv4)
-    elif data_source == "lidar":
-        deconv4_padded = ZeroPadding2D(padding=((0, 0), (1, 0)))(deconv4)
-    else:
-        print "invalid data source"
-        exit(1)
 
-
-    concat_deconv4 = concatenate([conv2, deconv4_padded], name='concat_deconv4')
+    concat_deconv4 = concatenate([conv2, deconv4], name='concat_deconv4')
 
     # classification task
-    deconv5a = Conv2DTranspose(8, 5, strides=(vs, 2), activation='relu', name='deconv5a',
+    deconv5a = Conv2DTranspose(8, 5, strides=(vs, 2), activation='relu', name='deconv5a', padding='same',
                                kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
 
-    if data_source == "camera":
-        deconv5a_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5a)
-    elif data_source == "lidar":
-        deconv5a_padded = ZeroPadding2D(padding=((0, 0), (0, 0)))(deconv5a)
-    else:
-        print "invalid data source"
-        exit(1)
+    deconv5a_padded = Cropping2D(cropping=((0, 0), (1, 0)))(deconv5a)
 
     concat_deconv5a = concatenate([conv1, deconv5a_padded], name='concat_deconv5a')
     deconv6a = Conv2DTranspose(2, 5, strides=(vs, 4), name='deconv6a', padding='same',
@@ -164,13 +149,14 @@ def build_model(input_shape, num_classes, data_source,
 
     # regression task
     if use_regression:        
-        deconv5b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(vs,2), activation='relu', name='deconv5b',
+        deconv5b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(vs,2), activation='relu',
+                                   name='deconv5b', padding='same',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv4)
 
         if data_source == "camera":
             deconv5b_padded = ZeroPadding2D(padding=((1, 0), (0, 0)))(deconv5b)
         elif data_source == "lidar":
-            deconv5b_padded = Cropping2D(cropping=((0, 0), (0, 0)))(deconv5b)
+            deconv5b_padded = Cropping2D(cropping=((0, 0), (1, 0)))(deconv5b)
         else:
             print "invalid data source"
             exit(1)
@@ -179,13 +165,14 @@ def build_model(input_shape, num_classes, data_source,
         concat_deconv5b = concatenate([conv1, deconv5b_padded], name='concat_deconv5b')
         
         
-        deconv6b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(vs,4), activation='relu', name='deconv6b',
+        deconv6b = Conv2DTranspose(globals.NUM_REGRESSION_OUTPUTS, 5, strides=(vs,4), activation='relu',
+                                   name='deconv6b', padding='same',
                                    kernel_initializer='random_uniform', bias_initializer='zeros')(concat_deconv5b)
         
         if data_source == "camera":
             deconv6b_crop = Cropping2D(cropping=((3, 0), (0, 4)))(deconv6b)
         elif data_source == "lidar":
-            deconv6b_crop = Cropping2D(cropping=((2, 2), (2, 2)))(deconv6b)
+            deconv6b_crop = Cropping2D(cropping=((0, 0), (0, 3)))(deconv6b)
         else:
             print "invalid data source"
             exit(1)
