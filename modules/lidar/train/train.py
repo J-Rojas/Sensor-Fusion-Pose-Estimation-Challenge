@@ -185,7 +185,7 @@ def main():
         if args.weightsFile != "":
             weightsFile = args.weightsFile
         model = load_model(args.modelFile, weightsFile,
-                           INPUT_SHAPE, NUM_CLASSES,
+                           input_shape, NUM_CLASSES,
                            use_regression=use_regression,                           
                            obj_to_bkg_ratio=population_statistics_train[
                                                 'positive_to_negative_ratio'] * K_NEGATIVE_SAMPLE_RATIO_WEIGHT,
