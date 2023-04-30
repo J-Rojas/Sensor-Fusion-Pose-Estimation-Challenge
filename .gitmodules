@@ -1,6 +1,6 @@
 [submodule "src/lidar"]
 	path = modules/lidar
-	url = https://github.com/stridera/team-sf-lidar
+	url = git://github.com/stridera/team-sf-lidar
 [submodule "modules/didi-competition"]
 	path = modules/didi_competition
 	url = https://github.com/udacity/didi-competition.git
